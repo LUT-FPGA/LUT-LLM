@@ -51,7 +51,46 @@ float silu_direct(float x) {
 float silu_piecewise(float x) {
     // This should match the hardware implementation's piece-wise approximation
     // For now, using direct computation - actual hardware may use lookup tables
-    return silu_direct(x);
+    float slope = 0.0f;
+    float intercept = 0.0f;
+    // piecewise linear approximation of silu
+    if (x < -8.000f) {
+        slope = 0.0f;
+        intercept = 0.0f;
+    }
+    else if (x < -4.000000f) {
+        slope = -0.017316f;
+        intercept = -0.141207f;
+    }
+    else if (x < -2.000000f) { // [-4.000000f, -2.000000f)
+        slope = -0.083231f;
+        intercept = -0.404867f;
+    }
+    else if (x < -1.000000f) { // [-2.000000f, -1.000000f)
+        slope = -0.030536f;
+        intercept = -0.299477f;
+    }
+    else if (x < 0.000000f) { // [-1.000000f, 0.000000f)
+        slope = 0.268941f;
+        intercept = 0.0f;
+    }
+    else if (x < 1.000000f) { // [0.000000f, 1.000000f)
+        slope = 0.731059f;
+        intercept = 0.0f;
+    }
+    else if (x < 2.000000f) { // [1.000000f, 2.000000f)
+        slope = 1.030536f;
+        intercept = -0.299477f;
+    }
+    else if (x < 4.000000f) { // [2.000000f, 4.000000f)
+        slope = 1.083231f;
+        intercept = -0.404867f;
+    }
+    else { // x >= 4.000000f
+        slope = 1.0f;
+        intercept = 0.0f;
+    }
+    return slope * x + intercept;
 }
 
 // Reference linear projection using LUT-based approach
@@ -163,8 +202,8 @@ int main(int argc, char* argv[]) {
     }
     
     // Pack input into hardware format
-    std::vector<tapa::vec_t<float, 2>> input_hw((HIDDEN_DIM_DIV_2 >> 1) * L);
-    for (int pos = 0; pos < (HIDDEN_DIM_DIV_2 >> 1); pos++) {
+    std::vector<tapa::vec_t<float, 2>> input_hw(HIDDEN_DIM_DIV_2 * L);
+    for (int pos = 0; pos < HIDDEN_DIM_DIV_2; pos++) {
         for (int i = 0; i < L; i++) {
             int hw_idx = pos * L + i;
             input_hw[hw_idx][0] = input[i][pos * 2];

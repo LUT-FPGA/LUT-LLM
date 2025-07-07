@@ -23,7 +23,7 @@ void combiner(
     tapa::istream<tapa::vec_t<float, 2>>& input_fifo,
     tapa::ostream<tapa::vec_t<float, 16>>& out_fifo
 ) {
-    for(int i = 0; i < (out_dim >> 2); i++) {
+    for(int i = 0; i < (out_dim >> 1); i++) {
         for (int j = 0; j < (L >> 3); j++) {
             tapa::vec_t<float, 16> tmp;
             for(int k = 0; k < 8; k++) {
@@ -58,7 +58,7 @@ void splitter(
     tapa::istream<tapa::vec_t<float, 16>>& input_fifo,
     tapa::ostream<tapa::vec_t<float, 2>>& out_fifo
 ) {
-    for(int i = 0; i < (INTERM_DIM >> 2); i++) {
+    for(int i = 0; i < INTERM_DIM_DIV_2; i++) {
         for (int j = 0; j < (L >> 3); j++) {
             auto tmp = input_fifo.read();
             for(int k = 0; k < 8; k++) {
@@ -78,14 +78,14 @@ void repeater(
     tapa::ostream<tapa::vec_t<float, 2>>& up_in_fifo,
     tapa::ostream<tapa::vec_t<float, 2>>& gate_in_fifo
 ) {
-    for(int i = 0; i < (HIDDEN_DIM >> 2); i++) {
+    for(int i = 0; i < HIDDEN_DIM_DIV_2; i++) {
+        LOG(INFO) << "iter: " << i;
         for (int j = 0; j < L;) {
             #pragma HLS pipeline II=1
             if (!input_fifo.empty()) {
                 tapa::vec_t<float, 2> tmp; input_fifo.try_read(tmp);
                 up_in_fifo.write(tmp);
                 gate_in_fifo.write(tmp);
-                LOG(INFO) << j;
                 j++;
             }
         }
@@ -98,7 +98,8 @@ void element_wise_mul(
     tapa::istream<tapa::vec_t<float, 2>>& gate_fifo,
     tapa::ostream<tapa::vec_t<float, 2>>& out_fifo
 ) {
-    for(int i = 0; i < (INTERM_DIM >> 2); i++) {
+    for(int i = 0; i < INTERM_DIM_DIV_2; i++) {
+        LOG(INFO) << "add iter: " << i;
         for(int j = 0; j < L;) {
             #pragma HLS pipeline II=1
             if (!up_fifo.empty() & !gate_fifo.empty()) {
@@ -155,7 +156,7 @@ void ffn_core(
     tapa::stream<tapa::vec_t<float, 16>> up_centroid_fifo("up_centroid_fifo");
     tapa::stream<ap_uint<8>, 16> up_idx_fifo("up_idx_fifo");
     tapa::stream<tapa::vec_t<ap_uint<64>, 8>> up_lut_fifo("up_lut_fifo");
-    tapa::stream<tapa::vec_t<float, 2>> up_out_fifo("up_out_fifo");
+    tapa::stream<tapa::vec_t<float, 2>, 16> up_out_fifo("up_out_fifo");
 
     tapa::stream<tapa::vec_t<float, 2>> gate_in_fifo("gate_in_fifo");
     tapa::stream<tapa::vec_t<float, 16>> gate_centroid_fifo("gate_centroid_fifo");
