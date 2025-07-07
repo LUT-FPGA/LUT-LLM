@@ -79,7 +79,6 @@ void repeater(
     tapa::ostream<tapa::vec_t<float, 2>>& gate_in_fifo
 ) {
     for(int i = 0; i < HIDDEN_DIM_DIV_2; i++) {
-        LOG(INFO) << "iter: " << i;
         for (int j = 0; j < L;) {
             #pragma HLS pipeline II=1
             if (!input_fifo.empty()) {
@@ -99,7 +98,6 @@ void element_wise_mul(
     tapa::ostream<tapa::vec_t<float, 2>>& out_fifo
 ) {
     for(int i = 0; i < INTERM_DIM_DIV_2; i++) {
-        LOG(INFO) << "add iter: " << i;
         for(int j = 0; j < L;) {
             #pragma HLS pipeline II=1
             if (!up_fifo.empty() & !gate_fifo.empty()) {
@@ -173,7 +171,6 @@ void ffn_core(
     tapa::stream<tapa::vec_t<ap_uint<64>, 8>> down_lut_fifo("down_lut_fifo");
     tapa::stream<tapa::vec_t<float, 16>> down_out_fifo("down_out_fifo");
 
-    tapa::stream<tapa::vec_t<float, 16>> linear_out_fifo("linear_out_fifo");
     tapa::stream<bool> fifo_fin("fifo_fin");
 
     tapa::task()
