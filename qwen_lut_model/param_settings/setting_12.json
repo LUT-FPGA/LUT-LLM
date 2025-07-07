@@ -1,0 +1,13 @@
+{
+    "vec_len": 4,
+    "n_centroids": 64,
+    "pea_x": 16,
+    "pea_y": 16,
+    "pea_z": 16,
+    "parallel_acc": 8,
+    "CCU_reload_factor": 16,
+    "act_bit": 8,
+    "lut_bit": 32,
+    "compress_lut_factor": 0.25,
+    "nonlinear_para_factor": 32
+}

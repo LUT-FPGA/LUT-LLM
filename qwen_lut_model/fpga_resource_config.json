@@ -1,0 +1,81 @@
+{
+    "bram": [
+        {"width": 18, "depth": 1024},
+        {"width": 36, "depth": 512},
+        {"width": 9, "depth": 2048}
+    ],
+    "lutram": {
+        "width": 64,
+        "proportion": 0.5
+    },
+    "uram": {
+        "width": 72,
+        "depth": 4096
+    },
+    "dsp": [
+        {
+            "version": "dsp48e2",
+            "op1_bitwidth": 18,
+            "op2_bitwidth": 27,
+            "operations": [
+                {
+                    "name": "fadd",
+                    "count": 2,
+                    "latency": 3
+                },
+                {
+                    "name": "fmul",
+                    "count": 3,
+                    "latency": 3
+                },
+                {
+                    "name": "fexp",
+                    "count": 9,
+                    "latency": 7
+                },
+                {
+                    "name": "fmadd",
+                    "count": 3,
+                    "latency": 3
+                },
+                {
+                    "name": "int8_madd",
+                    "count": 0.5,
+                    "latency": 3
+                }
+            ]
+        },
+        {
+            "version": "dsp58",
+            "op1_bitwidth": 24,
+            "op2_bitwidth": 27,
+            "operations": [
+                {
+                    "name": "fadd",
+                    "count": 1,
+                    "latency": 3
+                },
+                {
+                    "name": "fmul",
+                    "count": 1,
+                    "latency": 3
+                },
+                {
+                    "name": "fexp",
+                    "count": 6,
+                    "latency": 7
+                },
+                {
+                    "name": "fmadd",
+                    "count": 1,
+                    "latency": 3
+                },
+                {
+                    "name": "int8x9_dotprod",
+                    "count": 1,
+                    "latency": 3
+                }
+            ]
+        }
+    ]
+}

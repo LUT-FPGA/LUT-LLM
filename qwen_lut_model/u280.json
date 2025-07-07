@@ -1,0 +1,11 @@
+{
+    "lut" : 1304000,
+    "slr": 3,
+    "bram": 2016,
+    "uram": 960,
+    "dsp": 9024,
+    "off_chip_size": 8,
+    "off_chip_bw": 460,
+    "off_chip_port": 32,
+    "dsp_version": "dsp48e2"
+}

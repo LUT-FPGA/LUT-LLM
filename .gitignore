@@ -1,0 +1,4 @@
+.vscode/
+.specstory/
+*/*.log
+*/work.out

@@ -1,0 +1,11 @@
+{
+    "lut" : 2574208,
+    "slr": 3,
+    "bram": 7334,
+    "uram": 1878,
+    "dsp": 10848,
+    "off_chip_size": 32,
+    "off_chip_bw": 820,
+    "off_chip_port": 32,
+    "dsp_version": "dsp58"
+}
