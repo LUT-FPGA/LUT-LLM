@@ -386,15 +386,22 @@ int main(int argc, char* argv[]) {
     
     std::cout << "Cycle count: " << cycle_count_hw[0] << std::endl;
     
-    // Convert hardware output to structured format
+    // Convert hardware output from tapa::vec_t<float, 16> vectors to 2D array
+    // Hardware now writes in output-major order: for each output position, then for each sequence
     std::cout << "Converting hardware output..." << std::endl;
     std::vector<std::vector<float>> output_hw(L, std::vector<float>(HIDDEN_DIM));
-    for (int i = 0; i < L; i++) {
-        for (int j = 0; j < HIDDEN_DIM; j++) {
-            int linear_idx = i * HIDDEN_DIM + j;
-            int vec_idx = linear_idx / 16;
-            int elem_idx = linear_idx % 16;
-            output_hw[i][j] = output_hw_raw[vec_idx][elem_idx];
+    
+    for (int i = 0; i < HIDDEN_DIM / 16; i++) {        // For each output position group
+        for (int j = 0; j < L; j++) {                  // For each sequence
+            for (int k = 0; k < 16; k++) {             // For each element in the 16-element vector
+                int output_idx = i * 16 + k;          // Actual output index
+                if (output_idx < HIDDEN_DIM) {         // Bounds check
+                    int linear_idx = i * L * 16 + j * 16 + k;  // Hardware output layout
+                    int vec_idx = linear_idx / 16;
+                    int elem_idx = linear_idx % 16;
+                    output_hw[j][output_idx] = output_hw_raw[vec_idx][elem_idx];
+                }
+            }
         }
     }
     

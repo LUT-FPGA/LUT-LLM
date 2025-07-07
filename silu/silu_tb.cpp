@@ -22,23 +22,46 @@ float reference_silu(float x) {
 }
 
 float piecewise_silu(float x) {
-    if (x < -4.000000f) {
-        return 0.000671f * x + 0.005366f;
-    } else if (x < -2.000000f) { // [-4.000000f, -2.000000f)
-        return 0.008903f * x + 0.041316f;
-    } else if (x < -1.000000f) { // [-2.000000f, -1.000000f)
-        return 0.064666f * x + 0.209950f;
-    } else if (x < 0.000000f) { // [-1.000000f, 0.000000f)
-        return 0.196612f * x + 0.472083f;
-    } else if (x < 1.000000f) { // [0.000000f, 1.000000f)
-        return 0.303388f * x + 0.472083f;
-    } else if (x < 2.000000f) { // [1.000000f, 2.000000f)
-        return 0.435334f * x + 0.209950f;
-    } else if (x < 4.000000f) { // [2.000000f, 4.000000f)
-        return 0.491097f * x + 0.041316f;
-    } else { // x >= 4.000000f
-        return 0.999329f * x + 0.005366f;
+    float slope = 0.0f;
+    float intercept = 0.0f;
+    // piecewise linear approximation of silu
+    if (x < -8.000f) {
+        slope = 0.0f;
+        intercept = 0.0f;
     }
+    else if (x < -4.000000f) {
+        slope = -0.017316f;
+        intercept = -0.141207f;
+    }
+    else if (x < -2.000000f) { // [-4.000000f, -2.000000f)
+        slope = -0.083231f;
+        intercept = -0.404867f;
+    }
+    else if (x < -1.000000f) { // [-2.000000f, -1.000000f)
+        slope = -0.030536f;
+        intercept = -0.299477f;
+    }
+    else if (x < 0.000000f) { // [-1.000000f, 0.000000f)
+        slope = 0.268941f;
+        intercept = 0.0f;
+    }
+    else if (x < 1.000000f) { // [0.000000f, 1.000000f)
+        slope = 0.731059f;
+        intercept = 0.0f;
+    }
+    else if (x < 2.000000f) { // [1.000000f, 2.000000f)
+        slope = 1.030536f;
+        intercept = -0.299477f;
+    }
+    else if (x < 4.000000f) { // [2.000000f, 4.000000f)
+        slope = 1.083231f;
+        intercept = -0.404867f;
+    }
+    else { // x >= 4.000000f
+        slope = 1.0f;
+        intercept = 0.0f;
+    }
+    return slope * x + intercept;
 }
 
 // Reference implementation for batch processing using exact SiLU computation
@@ -49,7 +72,7 @@ void reference_silu_batch(
     int L = input.size();
     for (int l = 0; l < L; l++) {
         for (int i = 0; i < FFN_DIM; i++) {
-            output[l][i] = reference_silu(input[l][i]);  // Use exact SiLU computation
+            output[l][i] = piecewise_silu(input[l][i]);  // Use exact SiLU computation
         }
     }
 }
