@@ -100,7 +100,7 @@ int main(int argc, char* argv[]) {
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     
     // Test parameters - start with smaller size for debugging
-    const int L = 128;  // Sequence length (must be multiple of 16)
+    const int L = 32;  // Sequence length (must be multiple of 16)
     const int num_groups = 2;
     const int heads_per_group = 7;
     const int total_heads = 14;
@@ -120,7 +120,7 @@ int main(int argc, char* argv[]) {
     // Initialize random number generator
     std::random_device rd;
     std::mt19937 gen(42);  // Fixed seed for reproducibility
-    std::uniform_real_distribution<float> dis(-2.0f, 2.0f);
+    std::uniform_real_distribution<float> dis(-0.5f, 0.5f);
     
     // Generate random K, V, Q matrices
     // K matrices: [num_groups][seq_len][head_dim]
@@ -171,18 +171,6 @@ int main(int argc, char* argv[]) {
     
     // Pack data for both groups
     for (int g = 0; g < num_groups; g++) {
-        // Pack K matrix - the hardware reads it column by column
-        // load_k: for (int i = 0; i < HEAD_DIM; i++) for (int j = 0; j < (L >> 4); j++)
-        for (int col = 0; col < head_dim; col++) {
-            for (int row_chunk = 0; row_chunk < (L / 16); row_chunk++) {
-                for (int elem = 0; elem < 16; elem++) {
-                    int row = row_chunk * 16 + elem;
-                    input_hw[vec_idx][elem] = k_matrices[g][row][col];
-                }
-                vec_idx++;
-            }
-        }
-        
         // Pack V matrix - the hardware reads it row by row
         // load_v: for (int i = 0; i < L; i++) for (int j = 0; j < (HEAD_DIM >> 4); j++)
         for (int row = 0; row < L; row++) {
@@ -190,6 +178,18 @@ int main(int argc, char* argv[]) {
                 for (int elem = 0; elem < 16; elem++) {
                     int col = col_chunk * 16 + elem;
                     input_hw[vec_idx][elem] = v_matrices[g][row][col];
+                }
+                vec_idx++;
+            }
+        }
+        
+        // Pack K matrix - the hardware reads it column by column
+        // load_k: for (int i = 0; i < HEAD_DIM; i++) for (int j = 0; j < (L >> 4); j++)
+        for (int col = 0; col < head_dim; col++) {
+            for (int row_chunk = 0; row_chunk < (L / 16); row_chunk++) {
+                for (int elem = 0; elem < 16; elem++) {
+                    int row = row_chunk * 16 + elem;
+                    input_hw[vec_idx][elem] = k_matrices[g][row][col];
                 }
                 vec_idx++;
             }

@@ -13,11 +13,9 @@
 #include <cstdint>
 #include <limits>
 
-constexpr int HEAD_DIM = 64;
-constexpr int HEAD_DIM_DIV_2 = HEAD_DIM / 2;
-constexpr int MAX_SEQ_LEN = 128;
+#include "../config/config.h"
 
-void input_reader(
+void rope_input_reader(
     const int L,
     tapa::async_mmap<tapa::vec_t<float, 16>>& input_buffer,
     tapa::ostream<tapa::vec_t<float, 16>>& input_fifo
@@ -37,7 +35,7 @@ void input_reader(
     }
 }
 
-void out_writer(
+void rope_out_writer(
     const int L,
     tapa::istream<tapa::vec_t<float, 16>>& out_fifo,
     tapa::async_mmap<tapa::vec_t<float, 16>>& out_buffer,
@@ -169,11 +167,11 @@ void rope(
     tapa::stream<bool> fifo_fin("fifo_fin");
 
     tapa::task()
-        .invoke<tapa::join>(input_reader, L, input_buffer, input_fifo)
-        .invoke<tapa::join>(input_reader, L, sin_buffer, sin_fifo)
-        .invoke<tapa::join>(input_reader, L, cos_buffer, cos_fifo)
+        .invoke<tapa::join>(rope_input_reader, L, input_buffer, input_fifo)
+        .invoke<tapa::join>(rope_input_reader, L, sin_buffer, sin_fifo)
+        .invoke<tapa::join>(rope_input_reader, L, cos_buffer, cos_fifo)
         .invoke<tapa::join>(apply_rotary_pos_emb_inst, L, input_fifo, sin_fifo, cos_fifo, out_fifo)
-        .invoke<tapa::join>(out_writer, L, out_fifo, out_buffer, fifo_fin)
+        .invoke<tapa::join>(rope_out_writer, L, out_fifo, out_buffer, fifo_fin)
         .invoke<tapa::join>(measure_cycle, fifo_fin, cycle_count);
 }
 

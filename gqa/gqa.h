@@ -13,14 +13,10 @@
 #include <cstdint>
 #include <limits>
 
-constexpr int MAX_SEQ_LEN = 128;
-constexpr int HIDDEN_DIM = 896;
-constexpr int HEAD_DIM = 64;
-constexpr int HEAD_PER_GROUP = 7;
-constexpr int QKV_DIM = 896 + 64 * 4;
+#include "../config/config.h"
 
 
-void input_reader( // k[0], v[0], q[0:6], k[1], v[1], q[7:13]
+void gqa_input_reader( // k[0], v[0], q[0:6], k[1], v[1], q[7:13]
     const int L,
     tapa::async_mmap<tapa::vec_t<float, 16>>& input_buffer,
     tapa::ostream<tapa::vec_t<float, 16>>& input_fifo
@@ -95,6 +91,17 @@ void gemm_gqa(
         float v_buf[MAX_SEQ_LEN][HEAD_DIM];
         #pragma HLS array_partition variable=k_buf cyclic factor=16 dim=1
         #pragma HLS array_partition variable=v_buf cyclic factor=16 dim=2
+
+        load_v: for (int i = 0; i < L; i++) {
+            for (int j = 0; j < (HEAD_DIM >> 4); j++) {
+                #pragma HLS pipeline II=1
+                tapa::vec_t<float, 16> tmp = input_fifo.read(); 
+                for (int k = 0; k < 16; k++) {
+                    #pragma HLS unroll
+                    v_buf[i][j*16+k] = tmp[k];
+                }
+            }
+        }
         
         load_k: for (int i = 0; i < HEAD_DIM; i++) {
             for (int j = 0; j < (L >> 4); j++) {
@@ -107,16 +114,6 @@ void gemm_gqa(
             }
         }
 
-        load_v: for (int i = 0; i < L; i++) {
-            for (int j = 0; j < (HEAD_DIM >> 4); j++) {
-                #pragma HLS pipeline II=1
-                tapa::vec_t<float, 16> tmp = input_fifo.read(); 
-                for (int k = 0; k < 16; k++) {
-                    #pragma HLS unroll
-                    v_buf[i][j*16+k] = tmp[k];
-                }
-            }
-        }
 
         for (int r = 0; r < HEAD_PER_GROUP; r++) {
             
@@ -340,7 +337,7 @@ void gqa(
     tapa::stream<bool> fifo_fin("fifo_fin");
 
     tapa::task()
-        .invoke<tapa::join>(input_reader, L, input_buffer, input_fifo)
+        .invoke<tapa::join>(gqa_input_reader, L, input_buffer, input_fifo)
         .invoke<tapa::join>(gemm_gqa, L, input_fifo, pre_softmax_fifo, post_softmax_fifo, out_fifo)
         .invoke<tapa::join>(softmax, L, pre_softmax_fifo, post_softmax_fifo)
         .invoke<tapa::join>(out_writer, L, out_fifo, out_buffer, fifo_fin)

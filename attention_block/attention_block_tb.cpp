@@ -44,7 +44,8 @@ bool isClose(float a, float b, float tolerance = 1e-3) {
 
 // Reference rotary position embedding implementation (matching hardware behavior)
 void apply_rotary_pos_emb_ref(
-    std::vector<std::vector<float>>& tensor,  // [L, head_dim]
+    const std::vector<std::vector<float>>& tensor,  // [L, head_dim]
+    std::vector<std::vector<float>>& tensor_out,  // [L, head_dim]
     const std::vector<std::vector<float>>& cos,  // [L, head_dim]
     const std::vector<std::vector<float>>& sin,  // [L, head_dim]
     int L, int head_dim
@@ -54,7 +55,7 @@ void apply_rotary_pos_emb_ref(
             float x = tensor[i][j];
             float sin_val = sin[i][j];
             float cos_val = cos[i][j];
-            
+
             // Apply RoPE transformation: rotate_half operation
             float x_rotated;
             if (j < head_dim / 2) {
@@ -66,7 +67,7 @@ void apply_rotary_pos_emb_ref(
             }
             
             // RoPE formula: x * cos + rotate_half(x) * sin
-            tensor[i][j] = x * cos_val + x_rotated * sin_val;
+            tensor_out[i][j] = x * cos_val + x_rotated * sin_val;
         }
     }
 }
@@ -148,19 +149,18 @@ void reference_attention_block(
     const int num_heads = 14;
     const int num_kv_heads = 2;
     const int head_dim = HEAD_DIM;
-    const float scale = 1.0f / std::sqrt(static_cast<float>(head_dim));
     
-    // Step 1: Compute Q, K, V projections
-    std::vector<std::vector<float>> q_proj(L, std::vector<float>(QK_DIM));
-    std::vector<std::vector<float>> k_proj(L, std::vector<float>(QK_DIM));
+    // Step 1: Compute QK and V projections
+    // QK projection handles both Q and K simultaneously in the order: k[0], q[0:6], k[1], q[7:13]
+    std::vector<std::vector<float>> qk_proj(L, std::vector<float>(QK_DIM));
     std::vector<std::vector<float>> v_proj(L, std::vector<float>(V_DIM));
     
-    reference_linear_projection(input, qk_centroids, qk_lut, q_proj, L, HIDDEN_DIM, QK_DIM);
-    reference_linear_projection(input, qk_centroids, qk_lut, k_proj, L, HIDDEN_DIM, QK_DIM);
+    reference_linear_projection(input, qk_centroids, qk_lut, qk_proj, L, HIDDEN_DIM, QK_DIM);
     reference_linear_projection(input, v_centroids, v_lut, v_proj, L, HIDDEN_DIM, V_DIM);
     
-    // Step 2: Apply RoPE to Q and K
-    // Reshape Q and K to [L, num_heads, head_dim] and [L, num_kv_heads, head_dim]
+    // Step 2: Extract Q and K from the combined QK projection
+    // Layout: k[0], q[0:6], k[1], q[7:13] where each head has head_dim=64 dimensions
+    // QK_DIM = 896 + 64*2 = 1024, so: k[0] (64) + q[0:6] (7*64=448) + k[1] (64) + q[7:13] (7*64=448) = 1024
     std::vector<std::vector<std::vector<float>>> q_heads(L, 
         std::vector<std::vector<float>>(num_heads, std::vector<float>(head_dim)));
     std::vector<std::vector<std::vector<float>>> k_heads(L, 
@@ -168,25 +168,40 @@ void reference_attention_block(
     std::vector<std::vector<std::vector<float>>> v_heads(L, 
         std::vector<std::vector<float>>(num_kv_heads, std::vector<float>(head_dim)));
     
-    // Reshape Q
+    // Extract from QK projection: k[0], q[0:6], k[1], q[7:13]
     for (int i = 0; i < L; i++) {
-        for (int h = 0; h < num_heads; h++) {
+        int offset = 0;
+        
+        // Extract k[0] (group 0 key head)
+        for (int d = 0; d < head_dim; d++) {
+            k_heads[i][0][d] = qk_proj[i][offset + d];
+        }
+        offset += head_dim;
+        
+        // Extract q[0:6] (group 0 query heads)
+        for (int h = 0; h < 7; h++) {
             for (int d = 0; d < head_dim; d++) {
-                q_heads[i][h][d] = q_proj[i][h * head_dim + d];
+                q_heads[i][h][d] = qk_proj[i][offset + h * head_dim + d];
+            }
+        }
+        offset += 7 * head_dim;
+        
+        // Extract k[1] (group 1 key head)
+        for (int d = 0; d < head_dim; d++) {
+            k_heads[i][1][d] = qk_proj[i][offset + d];
+        }
+        offset += head_dim;
+        
+        // Extract q[7:13] (group 1 query heads)
+        for (int h = 0; h < 7; h++) {
+            for (int d = 0; d < head_dim; d++) {
+                q_heads[i][7 + h][d] = qk_proj[i][offset + h * head_dim + d];
             }
         }
     }
     
-    // Reshape K
-    for (int i = 0; i < L; i++) {
-        for (int h = 0; h < num_kv_heads; h++) {
-            for (int d = 0; d < head_dim; d++) {
-                k_heads[i][h][d] = k_proj[i][h * head_dim + d];
-            }
-        }
-    }
-    
-    // Reshape V
+    // Extract V heads from V projection (2 KV heads, each with head_dim dimensions)
+    // V_DIM = 64 * 2 = 128, so v[0] (64) + v[1] (64) = 128
     for (int i = 0; i < L; i++) {
         for (int h = 0; h < num_kv_heads; h++) {
             for (int d = 0; d < head_dim; d++) {
@@ -195,38 +210,40 @@ void reference_attention_block(
         }
     }
     
-    // Apply RoPE to Q and K heads
+    // Step 3: Apply RoPE to Q and K heads
     for (int h = 0; h < num_heads; h++) {
         std::vector<std::vector<float>> q_head_2d(L, std::vector<float>(head_dim));
+        std::vector<std::vector<float>> q_head_2d_out(L, std::vector<float>(head_dim));
         for (int i = 0; i < L; i++) {
             for (int d = 0; d < head_dim; d++) {
                 q_head_2d[i][d] = q_heads[i][h][d];
             }
         }
-        apply_rotary_pos_emb_ref(q_head_2d, cos_table, sin_table, L, head_dim);
+        apply_rotary_pos_emb_ref(q_head_2d, q_head_2d_out, cos_table, sin_table, L, head_dim);
         for (int i = 0; i < L; i++) {
             for (int d = 0; d < head_dim; d++) {
-                q_heads[i][h][d] = q_head_2d[i][d];
+                q_heads[i][h][d] = q_head_2d_out[i][d];
             }
         }
     }
     
     for (int h = 0; h < num_kv_heads; h++) {
         std::vector<std::vector<float>> k_head_2d(L, std::vector<float>(head_dim));
+        std::vector<std::vector<float>> k_head_2d_out(L, std::vector<float>(head_dim));
         for (int i = 0; i < L; i++) {
             for (int d = 0; d < head_dim; d++) {
                 k_head_2d[i][d] = k_heads[i][h][d];
             }
         }
-        apply_rotary_pos_emb_ref(k_head_2d, cos_table, sin_table, L, head_dim);
+        apply_rotary_pos_emb_ref(k_head_2d, k_head_2d_out, cos_table, sin_table, L, head_dim);
         for (int i = 0; i < L; i++) {
             for (int d = 0; d < head_dim; d++) {
-                k_heads[i][h][d] = k_head_2d[i][d];
+                k_heads[i][h][d] = k_head_2d_out[i][d];
             }
         }
     }
     
-    // Step 3: Compute attention for each head group
+    // Step 4: Compute attention for each head group
     std::vector<std::vector<std::vector<float>>> attn_output(L, 
         std::vector<std::vector<float>>(num_heads, std::vector<float>(head_dim)));
     
@@ -243,17 +260,10 @@ void reference_attention_block(
                     for (int d = 0; d < head_dim; d++) {
                         sum += q_heads[i][q_h][d] * k_heads[j][kv_h][d];
                     }
-                    scores[i][j] = sum * scale;
+                    scores[i][j] = sum;
                 }
             }
-            
-            // Apply causal mask (set upper triangle to -inf)
-            for (int i = 0; i < L; i++) {
-                for (int j = i + 1; j < L; j++) {
-                    scores[i][j] = -std::numeric_limits<float>::infinity();
-                }
-            }
-            
+
             // Apply softmax
             softmax_ref(scores, L);
             
@@ -267,10 +277,11 @@ void reference_attention_block(
                     attn_output[i][q_h][d] = sum;
                 }
             }
+            
         }
     }
     
-    // Step 4: Concatenate heads and apply output projection
+    // Step 5: Concatenate heads and apply output projection
     std::vector<std::vector<float>> concat_output(L, std::vector<float>(HIDDEN_DIM));
     for (int i = 0; i < L; i++) {
         for (int h = 0; h < num_heads; h++) {
@@ -295,8 +306,8 @@ int main(int argc, char* argv[]) {
     std::cout << "Testing Attention Block kernel with:" << std::endl;
     std::cout << "  L (sequence length): " << L << std::endl;
     std::cout << "  Hidden dimension: " << HIDDEN_DIM << std::endl;
-    std::cout << "  QK dimension: " << QK_DIM << std::endl;
-    std::cout << "  V dimension: " << V_DIM << std::endl;
+    std::cout << "  QK dimension: " << QK_DIM << " (k[0]:64 + q[0:6]:448 + k[1]:64 + q[7:13]:448)" << std::endl;
+    std::cout << "  V dimension: " << V_DIM << " (v[0]:64 + v[1]:64)" << std::endl;
     std::cout << "  Head dimension: " << HEAD_DIM << std::endl;
     std::cout << "  Number of centroids per position: " << num_centroids << std::endl;
     std::cout << "  Vector dimension: " << vector_dim << std::endl;
@@ -304,9 +315,9 @@ int main(int argc, char* argv[]) {
     // Initialize random number generator
     std::random_device rd;
     std::mt19937 gen(42);  // Fixed seed for reproducibility
-    std::uniform_real_distribution<float> centroid_dis(-10.0f, 10.0f);
-    std::uniform_real_distribution<float> lut_dis(-1.0f, 1.0f);
-    std::uniform_real_distribution<float> input_dis(-10.0f, 10.0f);
+    std::uniform_real_distribution<float> centroid_dis(-1.0f, 1.0f);
+    std::uniform_real_distribution<float> lut_dis(-0.3f, 0.3f);
+    std::uniform_real_distribution<float> input_dis(-1.0f, 1.0f);
     
     // Generate random input
     std::vector<std::vector<float>> input(L, std::vector<float>(HIDDEN_DIM));
@@ -544,18 +555,24 @@ int main(int argc, char* argv[]) {
     std::cout << "Cycle count: " << cycle_count_hw[0] << std::endl;
     
     // Convert hardware output from tapa::vec_t<float, 16> vectors to 2D array
-    // Hardware linear_out_writer writes in output-major order: for each output position group, then for each sequence
+    // Hardware memory_matcher_attn writes output organized by heads:
+    // for each head, then for each sequence position, then for each dimension chunk
     std::cout << "Converting hardware output..." << std::endl;
     std::vector<std::vector<float>> output_hw(L, std::vector<float>(HIDDEN_DIM));
     
-    for (int i = 0; i < HIDDEN_DIM / 16; i++) {        // For each output position group (16 elements each)
-        for (int j = 0; j < L; j++) {                  // For each sequence
-            for (int k = 0; k < 16; k++) {             // For each element in vector
-                int vec_idx = i * L + j;  // Hardware writes output-major order
-                int out_dim_idx = i * 16 + k;
-                if (out_dim_idx < HIDDEN_DIM) {
-                    output_hw[j][out_dim_idx] = output_hw_raw[vec_idx][k];
+    vec_idx = 0;
+    int num_heads = HIDDEN_DIM / HEAD_DIM;  // 896 / 64 = 14 heads
+    
+    for (int h = 0; h < num_heads; h++) {                    // For each head
+        for (int i = 0; i < L; i++) {                        // For each sequence position
+            for (int j = 0; j < (HEAD_DIM / 16); j++) {      // For each dimension chunk (64/16 = 4 chunks)
+                for (int k = 0; k < 16; k++) {               // For each element in vector
+                    int out_dim_idx = h * HEAD_DIM + j * 16 + k;
+                    if (out_dim_idx < HIDDEN_DIM) {
+                        output_hw[i][out_dim_idx] = output_hw_raw[vec_idx][k];
+                    }
                 }
+                vec_idx++;
             }
         }
     }

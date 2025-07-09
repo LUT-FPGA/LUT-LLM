@@ -21,7 +21,6 @@ void repeater(
     tapa::ostream<tapa::vec_t<float, 2>>& v_in_fifo
 ) {
     for(int i = 0; i < HIDDEN_DIM_DIV_2; i++) {
-        LOG(INFO) << "iter: " << i;
         for (int j = 0; j < L;) {
             #pragma HLS pipeline II=1
             if (!input_fifo.empty()) {
@@ -53,7 +52,6 @@ void transpose_head(
 ) {
 
     for(int r = 0; r < 16; r++){
-        #pragma HLS dataflow
 
         float head_buf[MAX_SEQ_LEN][HEAD_DIM];
         #pragma HLS array_partition variable=head_buf cyclic factor=16 dim=1
@@ -89,7 +87,6 @@ void transpose_vq(
 ) {
 
     for(int r = 0; r < 14; r++){
-        #pragma HLS dataflow
 
         float head_buf[MAX_SEQ_LEN][HEAD_DIM];
         #pragma HLS array_partition variable=head_buf cyclic factor=16 dim=2
@@ -117,16 +114,14 @@ void transpose_vq(
     }
 }
 
-void arbiter(
+void gqa_arbiter(
     const int L,
     tapa::istream<tapa::vec_t<float, 16>>& qk_in_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& v_in_fifo,
     tapa::ostream<tapa::vec_t<float, 16>>& out_fifo
 ) {
     for(int r = 0; r < 18; r++) {
-        LOG(INFO) << "head: " << r;
         for(int i = 0; i < (L * HEAD_DIM >> 4); i++) {
-            LOG(INFO) << "abt: " << i;
             #pragma HLS pipeline II=1
             tapa::vec_t<float, 16> tmp;
             if (r == 0 || r == 9) {
@@ -235,7 +230,7 @@ void attention_block(
         .invoke<tapa::join>(lut_reader, HIDDEN_DIM_DIV_2, V_DIM, v_lut_buffer, v_lut_fifo)
         .invoke<tapa::join>(ccu_fp32, L, HIDDEN_DIM_DIV_2, v_in_fifo, v_centroid_fifo, v_idx_fifo)
         .invoke<tapa::join>(memory_matcher_v, L, HIDDEN_DIM_DIV_2, V_DIM, v_idx_fifo, v_lut_fifo, v_out_fifo)
-        .invoke<tapa::join>(arbiter, L, qk_out_fifo, v_out_fifo, gqa_in_fifo)
+        .invoke<tapa::join>(gqa_arbiter, L, qk_out_fifo, v_out_fifo, gqa_in_fifo)
         .invoke<tapa::join>(gemm_gqa, L, gqa_in_fifo, pre_softmax_fifo, post_softmax_fifo, gqa_out_fifo)
         .invoke<tapa::join>(softmax, L, pre_softmax_fifo, post_softmax_fifo)
         .invoke<tapa::join>(transpose_vq, L, gqa_out_fifo, out_proj_in_fifo)

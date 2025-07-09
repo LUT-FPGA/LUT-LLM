@@ -13,10 +13,7 @@
 #include <cstdint>
 #include <limits>
 
-constexpr int MAX_SEQ_LEN = 128;
-constexpr int MAX_OUT_SIZE = 4864;
-constexpr int MAX_OUT_SIZE_DIV_2 = MAX_OUT_SIZE >> 1;
-constexpr int n_cent = 64;
+#include "../config/config.h"
 
 typedef ap_uint<8> idx_t;
 
@@ -172,6 +169,92 @@ void memory_matcher(
                 tmp[k*2 + 1] = tapa::bit_cast<float>(ap_uint<32>(linear_out[j][i * (para_write >> 1) + k](63, 32)));
             }
             out_fifo.write(tmp);
+        }
+    }
+}
+
+template<int dim_size = QK_DIM_DIV_2, int para_access_factor = 128>
+void memory_matcher_attn(
+    const int L,
+    const int in_size,
+    const int out_size,
+    tapa::istream<idx_t>& idx_fifo,
+    tapa::istream<tapa::vec_t<ap_uint<64>, 8>>& lut_fifo,
+    tapa::ostream<tapa::vec_t<float, 16>>& out_fifo
+) {
+    // prefetch LUT for linear layer
+    ap_uint<64> linear_lut[n_cent][dim_size];
+    #pragma HLS array_partition variable=linear_lut cyclic factor=para_access_factor dim=2
+    #pragma HLS bind_storage variable=linear_lut type=RAM_1P impl=BRAM
+
+    ap_uint<64> linear_out[MAX_SEQ_LEN][dim_size];
+    #pragma HLS array_partition variable=linear_out cyclic factor=para_access_factor dim=2
+    #pragma HLS bind_storage variable=linear_out type=RAM_2P impl=BRAM
+
+    for (int i = 0; i < L; i++) {
+        for (int j = 0; j < out_size/2; j+=para_access_factor){
+            #pragma HLS pipeline II=1
+            for (int k = 0; k < para_access_factor; k++) {
+                #pragma HLS unroll
+                linear_out[i][j + k] = ap_uint<64>(0); // Initialize output
+            }
+        }
+    }
+
+    // read indices and parallel match
+    for (int r = 0; r < in_size; r++) {
+
+        for(int i = 0; i < n_cent; i++) {
+            for (int j = 0; j < (out_size >> 4);){
+                #pragma HLS pipeline II=1
+                if(!lut_fifo.empty()){
+                    tapa::vec_t<ap_uint<64>, 8> tmp; lut_fifo.try_read(tmp);
+                    for(int k = 0; k < 8; k++) {
+                        #pragma HLS unroll
+                        linear_lut[i][j * 8 + k] = tmp[k];
+                    }
+                    j++;
+                }
+            }
+        }
+
+        for (int i = 0; i < L; i++) {
+
+            auto idx = idx_fifo.read();
+
+            for (int j = 0; j < out_size/2; j+=para_access_factor){
+                #pragma HLS pipeline II=1
+                for (int k = 0; k < para_access_factor; k++) {
+                    #pragma HLS unroll
+                    auto pack_psum = linear_out[i][j + k];
+                    auto pack_lut = linear_lut[idx][j + k];
+                    float op1 = tapa::bit_cast<float>(ap_uint<32>(pack_psum(31, 0)));
+                    float op2 = tapa::bit_cast<float>(ap_uint<32>(pack_psum(63, 32)));
+                    float op1_l = tapa::bit_cast<float>(ap_uint<32>(pack_lut(31, 0)));
+                    float op2_l = tapa::bit_cast<float>(ap_uint<32>(pack_lut(63, 32)));
+
+                    op1 += op1_l;
+                    op2 += op2_l;
+                    //repack
+                    linear_out[i][j + k] = ap_uint<64>((tapa::bit_cast<ap_uint<32>>(op2), tapa::bit_cast<ap_uint<32>>(op1)));
+                }
+            }
+        }
+    }
+
+    // write out heads
+    for (int r = 0; r < (out_size / HEAD_DIM); r++) {
+        for (int i = 0; i < L; i++) {
+            for (int j = 0; j < (HEAD_DIM >> 4); j++){
+                #pragma HLS pipeline II=1
+                tapa::vec_t<float, 16> tmp;
+                for (int k = 0; k < 8; k++) {
+                    #pragma HLS unroll
+                    tmp[k*2] = tapa::bit_cast<float>(ap_uint<32>(linear_out[i][r * HEAD_DIM_DIV_2 + j * 8 + k](31, 0)));
+                    tmp[k*2 + 1] = tapa::bit_cast<float>(ap_uint<32>(linear_out[i][r * HEAD_DIM_DIV_2 + j * 8 + k](63, 32)));
+                }
+                out_fifo.write(tmp);
+            }
         }
     }
 }
