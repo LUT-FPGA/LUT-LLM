@@ -37,6 +37,16 @@ void residual_bank(
         }
     }
 
+    for (int seq = 0; seq < 4 && seq < L; seq++) {
+        std::string log_str = "r=" + std::to_string(0) + " res_buf[" + std::to_string(seq) + "] = [";
+        for (int dim = 0; dim < 16; dim++) {
+            log_str += std::to_string(residual_buf[seq][dim]);
+            if (dim < 15) log_str += ", ";
+        }
+        log_str += "]";
+        LOG(INFO) << log_str;
+    }
+
     // 2. read from attention layer
     for (int i = 0; i < (L >> 4); i++) {
         LOG(INFO) << "attn read " << i;
@@ -51,6 +61,16 @@ void residual_bank(
             }
             norm_fifo.write(tmp); // write to norm fifo
         }
+    }
+
+    for (int seq = 0; seq < 4 && seq < L; seq++) {
+        std::string log_str = "r=" + std::to_string(1) + " res_buf[" + std::to_string(seq) + "] = [";
+        for (int dim = 0; dim < 16; dim++) {
+            log_str += std::to_string(residual_buf[seq][dim]);
+            if (dim < 15) log_str += ", ";
+        }
+        log_str += "]";
+        LOG(INFO) << log_str;
     }
 
     // 3. read from ffn layer
@@ -68,6 +88,16 @@ void residual_bank(
             norm_fifo.write(tmp); // write to norm fifo
         }
     }
+
+    for (int seq = 0; seq < 4 && seq < L; seq++) {
+        std::string log_str = "r=" + std::to_string(2) + " res_buf[" + std::to_string(seq) + "] = [";
+        for (int dim = 0; dim < 16; dim++) {
+            log_str += std::to_string(residual_buf[seq][dim]);
+            if (dim < 15) log_str += ", ";
+        }
+        log_str += "]";
+        LOG(INFO) << log_str;
+    }
 }
 
 void qwen_block(
@@ -82,7 +112,6 @@ void qwen_block(
     tapa::mmap<tapa::vec_t<float, 16>> out_proj_lut_buffer,
     tapa::mmap<tapa::vec_t<float, 16>> sin_buffer,
     tapa::mmap<tapa::vec_t<float, 16>> cos_buffer,
-    tapa::mmap<tapa::vec_t<float, 16>> attn_out_buffer,
     tapa::mmap<tapa::vec_t<float, 16>> up_centroid_buffer,
     tapa::mmap<tapa::vec_t<float, 16>> gate_centroid_buffer,
     tapa::mmap<tapa::vec_t<float, 16>> down_centroid_buffer,

@@ -99,17 +99,23 @@ void reference_rms_norm(
     std::vector<std::vector<float>>& output,       // L x HIDDEN_DIM
     int L
 ) {
+    const float epsilon = EPSILON;
+    const float r_hidden_dim = R_HIDDEN_DIM;
+    
     for (int i = 0; i < L; i++) {
-        // Compute RMS
-        float sum_sq = 0.0f;
+        // Compute variance (mean square)
+        float variance = 0.0f;
         for (int j = 0; j < HIDDEN_DIM; j++) {
-            sum_sq += input[i][j] * input[i][j];
+            variance += input[i][j] * input[i][j];
         }
-        float rms = std::sqrt(sum_sq / HIDDEN_DIM + EPSILON);
+        variance = variance * r_hidden_dim + epsilon;
         
-        // Apply normalization
+        // Compute RMS normalization factor
+        float rms_scale = 1.0f / std::sqrt(variance);
+        
+        // Apply normalization and weight scaling
         for (int j = 0; j < HIDDEN_DIM; j++) {
-            output[i][j] = (input[i][j] / rms) * weight[j];
+            output[i][j] = input[i][j] * rms_scale * weight[j];
         }
     }
 }
@@ -474,9 +480,9 @@ int main(int argc, char* argv[]) {
     // Initialize random number generator
     std::random_device rd;
     std::mt19937 gen(42);  // Fixed seed for reproducibility
-    std::uniform_real_distribution<float> centroid_dis(-1.0f, 1.0f);
-    std::uniform_real_distribution<float> lut_dis(-0.3f, 0.3f);
-    std::uniform_real_distribution<float> input_dis(-1.0f, 1.0f);
+    std::uniform_real_distribution<float> centroid_dis(-2.0f, 2.0f);
+    std::uniform_real_distribution<float> lut_dis(-0.2f, 0.2f);
+    std::uniform_real_distribution<float> input_dis(-2.0f, 2.0f);
     std::uniform_real_distribution<float> weight_dis(0.5f, 1.5f);
     
     // Generate random input
@@ -636,13 +642,14 @@ int main(int argc, char* argv[]) {
     // Generate frequency for each dimension pair
     std::vector<float> inv_freq(HEAD_DIM / 2);
     for (int i = 0; i < HEAD_DIM / 2; i++) {
-        inv_freq[i] = 1.0f / std::pow(theta, static_cast<float>(i * 2) / HEAD_DIM);
+        inv_freq[i] = 1.0f / std::pow(theta, 2.0f * i / HEAD_DIM);
     }
     
     // Generate sin and cos for each position
     for (int pos = 0; pos < L; pos++) {
         for (int i = 0; i < HEAD_DIM / 2; i++) {
-            float angle = static_cast<float>(pos) * inv_freq[i];
+            float angle = pos * inv_freq[i];
+            // Each frequency applies to two consecutive dimensions
             sin_table[pos][i] = std::sin(angle);
             cos_table[pos][i] = std::cos(angle);
             sin_table[pos][i + HEAD_DIM / 2] = std::sin(angle);
@@ -830,7 +837,6 @@ int main(int argc, char* argv[]) {
     
     // Allocate output arrays
     int output_vectors = (L * HIDDEN_DIM) / 16;
-    std::vector<tapa::vec_t<float, 16>> attn_out_hw(output_vectors);  // Not used as output but needed for interface
     std::vector<tapa::vec_t<float, 16>> layer_out_hw(output_vectors);
     std::vector<int> cycle_count_hw(1);
     
@@ -857,7 +863,6 @@ int main(int argc, char* argv[]) {
                 tapa::read_only_mmap<tapa::vec_t<float, 16>>(out_proj_lut_hw),
                 tapa::read_only_mmap<tapa::vec_t<float, 16>>(sin_hw),
                 tapa::read_only_mmap<tapa::vec_t<float, 16>>(cos_hw),
-                tapa::write_only_mmap<tapa::vec_t<float, 16>>(attn_out_hw),
                 tapa::read_only_mmap<tapa::vec_t<float, 16>>(up_centroid_hw),
                 tapa::read_only_mmap<tapa::vec_t<float, 16>>(gate_centroid_hw),
                 tapa::read_only_mmap<tapa::vec_t<float, 16>>(down_centroid_hw),
@@ -888,7 +893,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Verifying results..." << std::endl;
     int errors = 0;
     float max_error = 0.0f;
-    float tolerance = 1e-1f;  // Relaxed tolerance for full transformer block
+    float tolerance = 1e-5f;  // Relaxed tolerance for full transformer block
     
     for (int i = 0; i < L; i++) {
         for (int j = 0; j < HIDDEN_DIM; j++) {

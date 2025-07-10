@@ -175,7 +175,7 @@ void rms_norm_cache(
                 auto input_vec = input_fifo.read();
                 for(int k = 0; k < 16; k++){
                     #pragma HLS unroll
-                    input_buf[k][j] = input_vec[k];
+                    input_buf[i*16 + k][j] = input_vec[k];
                     variance[k] += input_vec[k] * input_vec[k];
                 }
             }
@@ -191,7 +191,7 @@ void rms_norm_cache(
 
                 for(int k = 0; k < 16; k++){
                     #pragma HLS unroll
-                    input_buf[k][j] *= (variance[k] * w);
+                    input_buf[i*16 + k][j] *= (variance[k] * w);
                 }
             }  
         }
