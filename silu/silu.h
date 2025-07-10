@@ -13,7 +13,7 @@
 #include <cstdint>
 #include <limits>
 
-constexpr int FFN_DIM = 4864;
+#include "../config/config.h"
 
 void silu_input_reader(
     const int L,

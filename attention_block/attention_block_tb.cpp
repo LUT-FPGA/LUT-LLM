@@ -561,19 +561,12 @@ int main(int argc, char* argv[]) {
     std::vector<std::vector<float>> output_hw(L, std::vector<float>(HIDDEN_DIM));
     
     vec_idx = 0;
-    int num_heads = HIDDEN_DIM / HEAD_DIM;  // 896 / 64 = 14 heads
-    
-    for (int h = 0; h < num_heads; h++) {                    // For each head
-        for (int i = 0; i < L; i++) {                        // For each sequence position
-            for (int j = 0; j < (HEAD_DIM / 16); j++) {      // For each dimension chunk (64/16 = 4 chunks)
-                for (int k = 0; k < 16; k++) {               // For each element in vector
-                    int out_dim_idx = h * HEAD_DIM + j * 16 + k;
-                    if (out_dim_idx < HIDDEN_DIM) {
-                        output_hw[i][out_dim_idx] = output_hw_raw[vec_idx][k];
-                    }
-                }
-                vec_idx++;
+    for (int i = 0; i < (L / 16); i++) {                        // For each sequence position
+        for (int j = 0; j < HIDDEN_DIM; j++) {      // For each dimension chunk (64/16 = 4 chunks)
+            for (int k = 0; k < 16; k++) {               // For each element in vector
+                output_hw[i * 16 + k][j] = output_hw_raw[vec_idx][k];
             }
+            vec_idx++;
         }
     }
     

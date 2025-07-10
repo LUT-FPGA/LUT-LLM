@@ -13,11 +13,9 @@
 #include <cstdint>
 #include <limits>
 
-constexpr int HIDDEN_DIM = 896;
-constexpr float EPSILON = 1e-6f;
-constexpr float R_HIDDEN_DIM = 1.0f / float(HIDDEN_DIM);
+#include "../config/config.h"
 
-void input_reader(
+void rms_input_reader(
     const int L,
     tapa::async_mmap<tapa::vec_t<float, 16>>& input_buffer,
     tapa::ostream<tapa::vec_t<float, 16>>& input_fifo
@@ -37,7 +35,7 @@ void input_reader(
     }
 }
 
-void weight_reader(
+void rms_weight_reader(
     tapa::async_mmap<tapa::vec_t<float, 16>>& weight_buffer,
     tapa::ostream<tapa::vec_t<float, 16>>& weight_fifo
 ) {
@@ -56,7 +54,7 @@ void weight_reader(
     }
 }
 
-void out_writer(
+void rms_out_writer(
     const int L,
     tapa::istream<tapa::vec_t<float, 16>>& out_fifo,
     tapa::async_mmap<tapa::vec_t<float, 16>>& out_buffer,
@@ -137,6 +135,98 @@ void rms_norm(
     }
 }
 
+void rms_norm_cache(
+    const int L,
+    tapa::istream<tapa::vec_t<float, 16>>& input_fifo,
+    tapa::istream<tapa::vec_t<float, 16>>& weight_fifo,
+    tapa::ostream<tapa::vec_t<float, 2>>& attn_fifo,
+    tapa::ostream<tapa::vec_t<float, 2>>& ffn_fifo,
+    tapa::ostream<tapa::vec_t<float, 16>>& out_fifo
+) {
+
+    //shared rms weight
+    float weight[HIDDEN_DIM];
+    #pragma HLS array_partition variable=weight cyclic factor=16
+    for(int i = 0; i < (HIDDEN_DIM >> 4); i++){
+        #pragma HLS pipeline II=1
+        auto weight_vec = weight_fifo.read();
+        for(int j = 0; j < 16; j++){
+            #pragma HLS unroll
+            weight[i * 16 + j] = weight_vec[j];
+        }
+    }
+
+
+    for (int r = 0; r < 3; r++) {
+        float input_buf[MAX_SEQ_LEN][HIDDEN_DIM];
+        #pragma HLS array_partition variable=input_buf cyclic factor=2 dim=2
+        #pragma HLS array_partition variable=input_buf cyclic factor=16 dim=1
+        #pragma HLS bind_storage variable=input_buf type=RAM_2P impl=URAM
+        for(int i = 0; i < (L >> 4); i++){
+            float variance[16];
+            #pragma HLS array_partition variable=variance complete
+            for(int j = 0; j < 16; j++){
+                #pragma HLS unroll
+                variance[j] = 0.0f;
+            }
+
+            for(int j = 0; j < HIDDEN_DIM; j++){
+                #pragma HLS pipeline II=1
+                auto input_vec = input_fifo.read();
+                for(int k = 0; k < 16; k++){
+                    #pragma HLS unroll
+                    input_buf[k][j] = input_vec[k];
+                    variance[k] += input_vec[k] * input_vec[k];
+                }
+            }
+
+            for(int j = 0; j < 16; j++){
+                #pragma HLS unroll
+                variance[j] = 1.0f / std::sqrt(variance[j] * R_HIDDEN_DIM + EPSILON);
+            }
+
+            for(int j = 0; j < HIDDEN_DIM; j++){
+                #pragma HLS pipeline II=1
+                float w = weight[j];
+
+                for(int k = 0; k < 16; k++){
+                    #pragma HLS unroll
+                    input_buf[k][j] *= (variance[k] * w);
+                }
+            }  
+        }
+        if (r < 2) {
+            for(int i = 0; i < HIDDEN_DIM_DIV_2; i++){
+                for(int j = 0; j < L; j++){
+                    #pragma HLS pipeline II=1
+                    tapa::vec_t<float, 2> tmp;
+                    for(int k = 0; k < 2; k++){
+                        #pragma HLS unroll
+                        tmp[k] = input_buf[j][i * 2 + k];
+                    }
+                    if (r == 0) {
+                        attn_fifo.write(tmp);
+                    } else {
+                        ffn_fifo.write(tmp);
+                    }
+                }
+            }
+        } else {
+            for(int i = 0; i < (L >> 4); i++){
+                for(int j = 0; j < HIDDEN_DIM; j++){
+                    #pragma HLS pipeline II=1
+                    tapa::vec_t<float, 16> tmp;
+                    for(int k = 0; k < 16; k++){
+                        #pragma HLS unroll
+                        tmp[k] = input_buf[i * 16 + k][j];
+                    }
+                    out_fifo.write(tmp);
+                }
+            }
+        }
+    }
+}
+
 #ifndef TIMING
 #define TIMING
 
@@ -166,10 +256,10 @@ void rms_norm_top(
     tapa::stream<bool> fifo_fin("fifo_fin");
 
     tapa::task()
-        .invoke<tapa::join>(input_reader, L, input_buffer, input_fifo)
-        .invoke<tapa::join>(weight_reader, weight_buffer, weight_fifo)
+        .invoke<tapa::join>(rms_input_reader, L, input_buffer, input_fifo)
+        .invoke<tapa::join>(rms_weight_reader, weight_buffer, weight_fifo)
         .invoke<tapa::join>(rms_norm, L, input_fifo, weight_fifo, out_fifo)
-        .invoke<tapa::join>(out_writer, L, out_fifo, out_buffer, fifo_fin)
+        .invoke<tapa::join>(rms_out_writer, L, out_fifo, out_buffer, fifo_fin)
         .invoke<tapa::join>(measure_cycle, fifo_fin, cycle_count);
 }
 

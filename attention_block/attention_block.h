@@ -14,25 +14,6 @@
 #include "../gqa/gqa.h"
 #include "../config/config.h"
 
-void repeater(
-    const int L,
-    tapa::istream<tapa::vec_t<float, 2>>& input_fifo,
-    tapa::ostream<tapa::vec_t<float, 2>>& qk_in_fifo,
-    tapa::ostream<tapa::vec_t<float, 2>>& v_in_fifo
-) {
-    for(int i = 0; i < HIDDEN_DIM_DIV_2; i++) {
-        for (int j = 0; j < L;) {
-            #pragma HLS pipeline II=1
-            if (!input_fifo.empty()) {
-                tapa::vec_t<float, 2> tmp; input_fifo.try_read(tmp);
-                qk_in_fifo.write(tmp);
-                v_in_fifo.write(tmp);
-                j++;
-            }
-        }
-    }
-}
-
 void apply_rope(
     const int L,
     tapa::istream<tapa::vec_t<float, 16>>& input_fifo,
@@ -156,17 +137,16 @@ void memory_matcher_v(
     memory_matcher_attn<V_DIM_DIV_2, 32>(L, in_size, out_size, idx_fifo, lut_fifo, out_fifo);
 }
 
-void memory_matcher_out(
-    const int L,
-    const int in_size,
-    const int out_size,
-    tapa::istream<idx_t>& idx_fifo,
-    tapa::istream<tapa::vec_t<ap_uint<64>, 8>>& lut_fifo,
-    tapa::ostream<tapa::vec_t<float, 16>>& out_fifo
-) {
-    memory_matcher_attn<HIDDEN_DIM_DIV_2, 32>(L, in_size, out_size, idx_fifo, lut_fifo, out_fifo);
-}
-
+// void memory_matcher_out(
+//     const int L,
+//     const int in_size,
+//     const int out_size,
+//     tapa::istream<idx_t>& idx_fifo,
+//     tapa::istream<tapa::vec_t<ap_uint<64>, 8>>& lut_fifo,
+//     tapa::ostream<tapa::vec_t<float, 16>>& out_fifo
+// ) {
+//     memory_matcher_attn<HIDDEN_DIM_DIV_2, 32>(L, in_size, out_size, idx_fifo, lut_fifo, out_fifo);
+// }
 
 
 void attention_block(
@@ -237,7 +217,7 @@ void attention_block(
         .invoke<tapa::join>(centroid_reader, HIDDEN_DIM_DIV_2, out_proj_centroid_buffer, out_proj_centroid_fifo)
         .invoke<tapa::join>(lut_reader, HIDDEN_DIM_DIV_2, HIDDEN_DIM, out_proj_lut_buffer, out_proj_lut_fifo)
         .invoke<tapa::join>(ccu_fp32, L, HIDDEN_DIM_DIV_2, out_proj_in_fifo, out_proj_centroid_fifo, out_proj_idx_fifo)
-        .invoke<tapa::join>(memory_matcher_out, L, HIDDEN_DIM_DIV_2, HIDDEN_DIM, out_proj_idx_fifo, out_proj_lut_fifo, attn_out_fifo)
+        .invoke<tapa::join>(memory_matcher_out_proj, L, HIDDEN_DIM_DIV_2, out_proj_idx_fifo, out_proj_lut_fifo, attn_out_fifo)
         .invoke<tapa::join>(linear_out_writer, L, HIDDEN_DIM, attn_out_fifo, attn_out_buffer, fifo_fin)
         .invoke<tapa::join>(measure_cycle, fifo_fin, cycle_count);
 }

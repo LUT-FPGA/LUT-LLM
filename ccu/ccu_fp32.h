@@ -223,6 +223,27 @@ void input_reader(
 	}
 }
 
+void input_reader_wide(
+    const int L,
+    const int in_size,
+    tapa::async_mmap<tapa::vec_t<float, 16>>& inp,
+    tapa::ostream<tapa::vec_t<float, 16>>& input_fifo
+) {
+    for(int i_req = 0, i_resp = 0; i_resp < ((L * in_size) >> 4);){
+        #pragma HLS pipeline II=1
+		if((i_req < ((L * in_size) >> 4)) & !inp.read_addr.full()){
+            inp.read_addr.try_write(i_req);
+            ++i_req;
+		}
+		if(!inp.read_data.empty()){
+            tapa::vec_t<float, 16> tmp;
+            inp.read_data.try_read(tmp);
+            input_fifo.write(tmp);
+            ++i_resp;
+		}
+	}
+}
+
 void centroid_reader(
     const int in_size,
     tapa::async_mmap<tapa::vec_t<float, 16>>& centroid,

@@ -12,11 +12,6 @@
 #include "../ccu/ccu_fp32.h"
 #include "../silu/silu.h"
 
-constexpr int HIDDEN_DIM = 896;
-constexpr int INTERM_DIM = 4864;
-constexpr int HIDDEN_DIM_DIV_2 = HIDDEN_DIM / 2;
-constexpr int INTERM_DIM_DIV_2 = INTERM_DIM / 2;
-
 template<int out_dim=INTERM_DIM>
 void combiner(
     const int L,
@@ -72,25 +67,6 @@ void splitter(
     }
 }
 
-void repeater(
-    const int L,
-    tapa::istream<tapa::vec_t<float, 2>>& input_fifo,
-    tapa::ostream<tapa::vec_t<float, 2>>& up_in_fifo,
-    tapa::ostream<tapa::vec_t<float, 2>>& gate_in_fifo
-) {
-    for(int i = 0; i < HIDDEN_DIM_DIV_2; i++) {
-        for (int j = 0; j < L;) {
-            #pragma HLS pipeline II=1
-            if (!input_fifo.empty()) {
-                tapa::vec_t<float, 2> tmp; input_fifo.try_read(tmp);
-                up_in_fifo.write(tmp);
-                gate_in_fifo.write(tmp);
-                j++;
-            }
-        }
-    }
-}
-
 void element_wise_mul(
     const int L,
     tapa::istream<tapa::vec_t<float, 2>>& up_fifo,
@@ -121,7 +97,7 @@ void memory_matcher_up_gate(
     tapa::istream<tapa::vec_t<ap_uint<64>, 8>>& lut_fifo,
     tapa::ostream<tapa::vec_t<float, 2>>& out_fifo
 ) {
-    memory_matcher<2, 32>(L, in_size, out_size, idx_fifo, lut_fifo, out_fifo);
+    memory_matcher<2, 128>(L, in_size, out_size, idx_fifo, lut_fifo, out_fifo);
 }
 
 void memory_matcher_down(
@@ -132,7 +108,7 @@ void memory_matcher_down(
     tapa::istream<tapa::vec_t<ap_uint<64>, 8>>& lut_fifo,
     tapa::ostream<tapa::vec_t<float, 16>>& out_fifo
 ) {
-    memory_matcher<16, 128>(L, in_size, out_size, idx_fifo, lut_fifo, out_fifo);
+    memory_matcher<16, 64>(L, in_size, out_size, idx_fifo, lut_fifo, out_fifo);
 }
 
 
@@ -191,7 +167,7 @@ void ffn_core(
         .invoke<tapa::join>(centroid_reader, INTERM_DIM_DIV_2, down_centroid_buffer, down_centroid_fifo)
         .invoke<tapa::join>(lut_reader, INTERM_DIM_DIV_2, HIDDEN_DIM, down_lut_buffer, down_lut_fifo)
         .invoke<tapa::join>(ccu_fp32, L, INTERM_DIM_DIV_2, down_in_fifo, down_centroid_fifo, down_idx_fifo)
-        .invoke<tapa::join>(memory_matcher_down, L, INTERM_DIM_DIV_2, HIDDEN_DIM, down_idx_fifo, down_lut_fifo, down_out_fifo)
+        .invoke<tapa::join>(memory_matcher_out_proj, L, INTERM_DIM_DIV_2, down_idx_fifo, down_lut_fifo, down_out_fifo)
         .invoke<tapa::join>(linear_out_writer, L, HIDDEN_DIM, down_out_fifo, ffn_out_buffer, fifo_fin)
         .invoke<tapa::join>(measure_cycle, fifo_fin, cycle_count);
 }
