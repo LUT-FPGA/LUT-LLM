@@ -25,7 +25,6 @@ void residual_bank(
 
     // 1. read from input
     for (int i = 0; i < (L >> 4); i++) {
-        LOG(INFO) << "input read " << i;
         for (int j = 0; j < HIDDEN_DIM; j++) {
             #pragma HLS pipeline II=1
             auto input_vec = input_fifo.read();
@@ -37,19 +36,8 @@ void residual_bank(
         }
     }
 
-    for (int seq = 0; seq < 4 && seq < L; seq++) {
-        std::string log_str = "r=" + std::to_string(0) + " res_buf[" + std::to_string(seq) + "] = [";
-        for (int dim = 0; dim < 16; dim++) {
-            log_str += std::to_string(residual_buf[seq][dim]);
-            if (dim < 15) log_str += ", ";
-        }
-        log_str += "]";
-        LOG(INFO) << log_str;
-    }
-
     // 2. read from attention layer
     for (int i = 0; i < (L >> 4); i++) {
-        LOG(INFO) << "attn read " << i;
         for (int j = 0; j < HIDDEN_DIM; j++) {
             #pragma HLS pipeline II=1
             auto attn_vec = attn_in_fifo.read();
@@ -63,19 +51,8 @@ void residual_bank(
         }
     }
 
-    for (int seq = 0; seq < 4 && seq < L; seq++) {
-        std::string log_str = "r=" + std::to_string(1) + " res_buf[" + std::to_string(seq) + "] = [";
-        for (int dim = 0; dim < 16; dim++) {
-            log_str += std::to_string(residual_buf[seq][dim]);
-            if (dim < 15) log_str += ", ";
-        }
-        log_str += "]";
-        LOG(INFO) << log_str;
-    }
-
     // 3. read from ffn layer
     for (int i = 0; i < (L >> 4); i++) {
-        LOG(INFO) << "ffn read " << i;
         for (int j = 0; j < HIDDEN_DIM; j++) {
             #pragma HLS pipeline II=1
             auto ffn_vec = ffn_in_fifo.read();
@@ -87,16 +64,6 @@ void residual_bank(
             }
             norm_fifo.write(tmp); // write to norm fifo
         }
-    }
-
-    for (int seq = 0; seq < 4 && seq < L; seq++) {
-        std::string log_str = "r=" + std::to_string(2) + " res_buf[" + std::to_string(seq) + "] = [";
-        for (int dim = 0; dim < 16; dim++) {
-            log_str += std::to_string(residual_buf[seq][dim]);
-            if (dim < 15) log_str += ", ";
-        }
-        log_str += "]";
-        LOG(INFO) << log_str;
     }
 }
 
