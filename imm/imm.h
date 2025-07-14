@@ -23,9 +23,9 @@ void index_reader(
     tapa::async_mmap<int>& idx_buffer,
     tapa::ostream<idx_t>& idx_fifo
 ) {
-    for(int i_req = 0, i_resp = 0; i_resp < (L * in_size);){
+    for(int i_req = 0, i_resp = 0; i_resp < (L * in_size >> 3);){
         #pragma HLS pipeline II=1
-		if((i_req < (L * in_size)) & !idx_buffer.read_addr.full()){
+		if((i_req < (L * in_size >> 3)) & !idx_buffer.read_addr.full()){
             idx_buffer.read_addr.try_write(i_req);
             ++i_req;
 		}
@@ -43,23 +43,39 @@ void lut_reader(
     const int in_size,
     const int out_size,
     tapa::async_mmap<tapa::vec_t<float, 16>>& lut_buffer,
-    tapa::ostream<tapa::vec_t<ap_uint<64>, 8>>& lut_fifo
+    tapa::ostream<tapa::vec_t<float, 16>>& lut_fifo
 ) {
-    for(int i_req = 0, i_resp = 0; i_resp < ((out_size * in_size) << 2);){
+    for(int i_req = 0, i_resp = 0; i_resp < ((out_size * in_size) >> 5);){
         #pragma HLS pipeline II=1
-        if((i_req < ((out_size * in_size) << 2)) & !lut_buffer.read_addr.full()){
+        if((i_req < ((out_size * in_size) >> 5)) & !lut_buffer.read_addr.full()){
             lut_buffer.read_addr.try_write(i_req);
             ++i_req;
         }
         if(!lut_buffer.read_data.empty()){
             tapa::vec_t<float, 16> tmp;
             lut_buffer.read_data.try_read(tmp);
-            tapa::vec_t<ap_uint<64>, 8> tmp64;
-            for(int i = 0; i < 8; ++i) {
-                #pragma HLS unroll
-                tmp64[i] = ap_uint<64>((tapa::bit_cast<ap_uint<32>>(tmp[i*2 + 1]), tapa::bit_cast<ap_uint<32>>(tmp[i*2])));
-            }
-            lut_fifo.write(tmp64);
+            lut_fifo.write(tmp);
+            ++i_resp;
+        }
+    }
+}
+
+void weight_idx_reader(
+    const int in_size,
+    const int out_size,
+    tapa::async_mmap<tapa::vec_t<ap_uint<4>, 128>>& lut_buffer,
+    tapa::ostream<tapa::vec_t<ap_uint<4>, 128>>& lut_fifo
+) {
+    for(int i_req = 0, i_resp = 0; i_resp < ((out_size * in_size) >> 10);){
+        #pragma HLS pipeline II=1
+        if((i_req < ((out_size * in_size) >> 10)) & !lut_buffer.read_addr.full()){
+            lut_buffer.read_addr.try_write(i_req);
+            ++i_req;
+        }
+        if(!lut_buffer.read_data.empty()){
+            tapa::vec_t<ap_uint<4>, 128> tmp;
+            lut_buffer.read_data.try_read(tmp);
+            lut_fifo.write(tmp);
             ++i_resp;
         }
     }
@@ -167,6 +183,216 @@ void memory_matcher(
                 #pragma HLS unroll
                 tmp[k*2] = tapa::bit_cast<float>(ap_uint<32>(linear_out[j][i * (para_write >> 1) + k](31, 0)));
                 tmp[k*2 + 1] = tapa::bit_cast<float>(ap_uint<32>(linear_out[j][i * (para_write >> 1) + k](63, 32)));
+            }
+            out_fifo.write(tmp);
+        }
+    }
+}
+
+void memory_matcher_w_vq(
+    const int L,
+    const int in_size,
+    const int out_size,
+    tapa::istream<idx_t>& idx_fifo,
+    tapa::istream<tapa::vec_t<float, 16>>& lut_fifo,
+    tapa::istream<tapa::vec_t<ap_uint<4>, 128>>& weight_idx_fifo,
+    tapa::istreams<tapa::vec_t<float, 32>, 8>& inbound_fifo,
+    tapa::ostreams<tapa::vec_t<float, 32>, 8>& outbound_fifo
+) {
+    // read indices and parallel match
+    for (int r = 0; r < (in_size >> 3); r++) {
+        // prefetch LUT for linear layer
+        float linear_lut[n_cent][w_n_cent][MAX_OUT_SIZE_DIV_256];
+        #pragma HLS array_partition variable=linear_lut complete dim=2
+        ap_uint<4> weight_idx[MAX_OUT_SIZE];
+        #pragma HLS array_partition variable=weight_idx cyclic factor=256
+        #pragma HLS bind_storage variable=weight_idx type=RAM_1P impl=LUTRAM
+
+        for(int i = 0; i < n_cent; i++) {
+            for (int j = 0; j < (out_size / 256);){
+                #pragma HLS pipeline II=1
+                if(!lut_fifo.empty()){
+                    tapa::vec_t<float, 16> tmp; lut_fifo.try_read(tmp);
+                    for(int k = 0; k < 16; k++) {
+                        #pragma HLS unroll
+                        linear_lut[i][k][j] = tmp[k];
+                    }
+                    j++;
+                }
+            }
+        }
+
+        for (int i = 0; i < (out_size / 128);) {
+            #pragma HLS pipeline II=1
+            if(!weight_idx_fifo.empty()){
+                tapa::vec_t<ap_uint<4>, 128> tmp; weight_idx_fifo.try_read(tmp);
+                for(int k = 0; k < 128; k++) {
+                    #pragma HLS unroll
+                    weight_idx[i * 128 + k] = tmp[k];
+                }
+                i++;
+            }
+        }
+
+        for (int i = 0; i < L; i++) {
+
+            auto idx = idx_fifo.read();
+
+            for (int j = 0; j < (out_size / 256); j++) {
+                #pragma HLS pipeline II=1
+
+                float linear_out_reg[256];
+                #pragma HLS array_partition variable=linear_out_reg complete
+                float lut_reg[16];
+                #pragma HLS array_partition variable=lut_reg complete
+
+                for (int k = 0; k < 16; k++) {
+                    #pragma HLS unroll
+                    lut_reg[k] = linear_lut[idx][k][j];
+                }
+                for (int k = 0; k < 256; k++) {
+                    #pragma HLS unroll
+                    int w_idx = weight_idx[j * 256 + k].to_int();
+                    linear_out_reg[k] = lut_reg[w_idx];
+                }
+                for (int k = 0; k < 8; k++) {
+                    #pragma HLS unroll
+                    auto tmp_vec = inbound_fifo[k].read();
+                    tapa::vec_t<float, 32> out_vec;
+                    for (int m = 0; m < 32; m++) {
+                        #pragma HLS unroll
+                        out_vec[m] = tmp_vec[m] + linear_out_reg[k * 32 + m];
+                    }
+                    outbound_fifo[k].write(out_vec);
+                }
+            }
+        }
+    }
+}
+
+void memory_matcher_w_vq_head(
+    const int L,
+    const int in_size,
+    const int out_size,
+    tapa::istream<idx_t>& idx_fifo,
+    tapa::istream<tapa::vec_t<float, 16>>& lut_fifo,
+    tapa::istream<tapa::vec_t<ap_uint<4>, 128>>& weight_idx_fifo,
+    tapa::ostreams<tapa::vec_t<float, 32>, 8>& outbound_fifo
+) {
+    // read indices and parallel match
+    for (int r = 0; r < (in_size >> 3); r++) {
+        // prefetch LUT for linear layer
+        float linear_lut[n_cent][w_n_cent][MAX_OUT_SIZE_DIV_256];
+        #pragma HLS array_partition variable=linear_lut complete dim=2
+        ap_uint<4> weight_idx[MAX_OUT_SIZE];
+        #pragma HLS array_partition variable=weight_idx cyclic factor=256
+        #pragma HLS bind_storage variable=weight_idx type=RAM_1P impl=LUTRAM
+
+        for(int i = 0; i < n_cent; i++) {
+            for (int j = 0; j < (out_size / 256);){
+                #pragma HLS pipeline II=1
+                if(!lut_fifo.empty()){
+                    tapa::vec_t<float, 16> tmp; lut_fifo.try_read(tmp);
+                    for(int k = 0; k < 16; k++) {
+                        #pragma HLS unroll
+                        linear_lut[i][k][j] = tmp[k];
+                    }
+                    j++;
+                }
+            }
+        }
+
+        for (int i = 0; i < (out_size / 128);) {
+            #pragma HLS pipeline II=1
+            if(!weight_idx_fifo.empty()){
+                tapa::vec_t<ap_uint<4>, 128> tmp; weight_idx_fifo.try_read(tmp);
+                for(int k = 0; k < 128; k++) {
+                    #pragma HLS unroll
+                    weight_idx[i * 128 + k] = tmp[k];
+                }
+                i++;
+            }
+        }
+
+        for (int i = 0; i < L; i++) {
+
+            auto idx = idx_fifo.read();
+
+            for (int j = 0; j < (out_size / 256); j++) {
+                #pragma HLS pipeline II=1
+
+                float linear_out_reg[256];
+                #pragma HLS array_partition variable=linear_out_reg complete
+                float lut_reg[16];
+                #pragma HLS array_partition variable=lut_reg complete
+
+                for (int k = 0; k < 16; k++) {
+                    #pragma HLS unroll
+                    lut_reg[k] = linear_lut[idx][k][j];
+                }
+                for (int k = 0; k < 256; k++) {
+                    #pragma HLS unroll
+                    int w_idx = weight_idx[j * 256 + k].to_int();
+                    linear_out_reg[k] = lut_reg[w_idx];
+                }
+                for (int k = 0; k < 8; k++) {
+                    #pragma HLS unroll
+                    tapa::vec_t<float, 32> out_vec;
+                    for (int m = 0; m < 32; m++) {
+                        #pragma HLS unroll
+                        out_vec[m] = linear_out_reg[k * 32 + m];
+                    }
+                    outbound_fifo[k].write(out_vec);
+                }
+            }
+        }
+    }
+}
+
+void memory_matcher_tail_acc(
+    const int L,
+    const int in_size,
+    const int out_size,
+    tapa::istreams<tapa::vec_t<float, 32>, 8>& inbound_fifo,
+    tapa::ostream<tapa::vec_t<float, 16>>& out_fifo
+) {
+    ap_uint<64> linear_out[MAX_SEQ_LEN][MAX_OUT_SIZE_DIV_2];
+    #pragma HLS array_partition variable=linear_out cyclic factor=128 dim=2
+    #pragma HLS bind_storage variable=linear_out type=RAM_2P impl=URAM
+
+    // read indices and parallel match
+    for (int r = 0; r < (in_size >> 3); r++) {
+
+        for (int i = 0; i < L; i++) {
+
+            for (int j = 0; j < (out_size / 256); j++) {
+                #pragma HLS pipeline II=1
+                
+                for (int k = 0; k < 8; k++) {
+                    #pragma HLS unroll
+                    auto tmp_vec = inbound_fifo[k].read();
+                    for (int m = 0; m < 16; m++) {
+                        #pragma HLS unroll
+                        ap_uint<64> acc_reg = linear_out[i][j*128 + k*16 + m];
+                        float val1 = tapa::bit_cast<float>(ap_uint<32>(acc_reg(31, 0)));
+                        float val2 = tapa::bit_cast<float>(ap_uint<32>(acc_reg(63, 32)));
+                        val1 += tmp_vec[m * 2];
+                        val2 += tmp_vec[m * 2 + 1];
+                        linear_out[i][j*128 + k*16 + m] = ap_uint<64>((tapa::bit_cast<ap_uint<32>>(val2), tapa::bit_cast<ap_uint<32>>(val1)));;
+                    }
+                }
+            }
+        }
+    }
+
+    for (int i = 0; i < out_size / 16; i++) {
+        for (int j = 0; j < L; j++){
+            #pragma HLS pipeline II=1
+            tapa::vec_t<float, 16> tmp;
+            for (int k = 0; k < 8; k++) {
+                #pragma HLS unroll
+                tmp[k*2] = tapa::bit_cast<float>(ap_uint<32>(linear_out[j][i * 8 + k](31, 0)));
+                tmp[k*2 + 1] = tapa::bit_cast<float>(ap_uint<32>(linear_out[j][i * 8 + k](63, 32)));
             }
             out_fifo.write(tmp);
         }
@@ -384,20 +610,39 @@ void imm(
     const int L,
     const int in_size,
     const int out_size,
-    tapa::mmap<int> idx_buffer,
-    tapa::mmap<tapa::vec_t<float, 16>> lut_buffer,
+    tapa::mmaps<int, 8> idx_buffer,
+    tapa::mmaps<tapa::vec_t<float, 16>, 8> lut_buffer,
+    tapa::mmaps<tapa::vec_t<ap_uint<4>, 128>, 8> weight_idx_buffer,
     tapa::mmap<tapa::vec_t<float, 16>> linear_out_buffer,
     tapa::mmap<int> cycle_count
 ) {
-    tapa::stream<idx_t> idx_fifo("idx_fifo");
-    tapa::stream<tapa::vec_t<ap_uint<64>, 8>> lut_fifo("lut_fifo");
+    tapa::streams<idx_t, 8> idx_fifo("idx_fifo");
+    tapa::streams<tapa::vec_t<float, 16>, 8> lut_fifo("lut_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<4>, 128>, 8> weight_idx_fifo("weight_idx_fifo");
+    tapa::streams<tapa::vec_t<float, 32>, 8> psum_0_fifo("psum_0_fifo");
+    tapa::streams<tapa::vec_t<float, 32>, 8> psum_1_fifo("psum_1_fifo");
+    tapa::streams<tapa::vec_t<float, 32>, 8> psum_2_fifo("psum_2_fifo");
+    tapa::streams<tapa::vec_t<float, 32>, 8> psum_3_fifo("psum_3_fifo");
+    tapa::streams<tapa::vec_t<float, 32>, 8> psum_4_fifo("psum_4_fifo");
+    tapa::streams<tapa::vec_t<float, 32>, 8> psum_5_fifo("psum_5_fifo");
+    tapa::streams<tapa::vec_t<float, 32>, 8> psum_6_fifo("psum_6_fifo");
+    tapa::streams<tapa::vec_t<float, 32>, 8> psum_7_fifo("psum_7_fifo");
     tapa::stream<tapa::vec_t<float, 16>> out_fifo("out_fifo");
     tapa::stream<bool> fifo_fin("fifo_fin");
 
     tapa::task()
-        .invoke<tapa::join>(index_reader, L, in_size, idx_buffer, idx_fifo)
-        .invoke<tapa::join>(lut_reader, in_size, out_size, lut_buffer, lut_fifo)
-        .invoke<tapa::join>(memory_matcher_test, L, in_size, out_size, idx_fifo, lut_fifo, out_fifo)
+        .invoke<tapa::join, 8>(index_reader, L, in_size, idx_buffer, idx_fifo)
+        .invoke<tapa::join, 8>(lut_reader, in_size, out_size, lut_buffer, lut_fifo)
+        .invoke<tapa::join, 8>(weight_idx_reader, in_size, out_size, weight_idx_buffer, weight_idx_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq_head, L, in_size, out_size, idx_fifo, lut_fifo, weight_idx_fifo, psum_0_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq, L, in_size, out_size, idx_fifo, lut_fifo, weight_idx_fifo, psum_0_fifo, psum_1_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq, L, in_size, out_size, idx_fifo, lut_fifo, weight_idx_fifo, psum_1_fifo, psum_2_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq, L, in_size, out_size, idx_fifo, lut_fifo, weight_idx_fifo, psum_2_fifo, psum_3_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq, L, in_size, out_size, idx_fifo, lut_fifo, weight_idx_fifo, psum_3_fifo, psum_4_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq, L, in_size, out_size, idx_fifo, lut_fifo, weight_idx_fifo, psum_4_fifo, psum_5_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq, L, in_size, out_size, idx_fifo, lut_fifo, weight_idx_fifo, psum_5_fifo, psum_6_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq, L, in_size, out_size, idx_fifo, lut_fifo, weight_idx_fifo, psum_6_fifo, psum_7_fifo)
+        .invoke<tapa::join>(memory_matcher_tail_acc, L, in_size, out_size, psum_7_fifo, out_fifo)
         .invoke<tapa::join>(linear_out_writer, L, out_size, out_fifo, linear_out_buffer, fifo_fin)
         .invoke<tapa::join>(measure_cycle, fifo_fin, cycle_count);
 }

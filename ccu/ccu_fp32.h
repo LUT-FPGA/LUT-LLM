@@ -66,11 +66,32 @@ void distance_pe(
     }
 }
 
+void input_splitter(
+    const int L,
+    const int in_size,
+    tapa::istream<tapa::vec_t<float, 16>>& input_fifo,
+    tapa::ostreams<tapa::vec_t<float, 2>, 8>& output_fifo
+) {
+    for(int i = 0; i < (L * in_size >> 3); i++){
+        #pragma HLS pipeline II=1
+        auto input_vec = input_fifo.read();
+        for (int j = 0; j < 8; j++) {
+            #pragma HLS unroll
+            tapa::vec_t<float, 2> tmp;
+            for (int k = 0; k < 2; k++) {
+                #pragma HLS unroll
+                tmp[k] = input_vec[j * 2 + k];
+            }
+            output_fifo[j].write(tmp);
+        }
+    }
+}
+
 void ccu_fp32(
     const int L, // sequence length
     const int in_size, // number of 2-element positions
     tapa::istream<tapa::vec_t<float, 2>>& inp,
-    tapa::istream<tapa::vec_t<float, 16>>& centroid, // read 64 centroids with 8 cycles
+    tapa::istream<tapa::vec_t<float, 2>>& centroid,
     tapa::ostream<ap_uint<8>>& idx_out
 ) {
 
@@ -100,18 +121,10 @@ void ccu_fp32(
         // Read centroid data and distribute to PEs
         // Each centroid read provides 16 floats, each PE needs 2 floats
         // So we get 8 centroids per read, need 8 reads for 64 centroids
-        read_centroid: for (int c = 0; c < 8; c++) {
+        read_centroid: for (int c = 0; c < 64; c++) {
             #pragma HLS pipeline II=1
             auto centroid_vec = centroid.read();
-            for (int j = 0; j < 8; j++) {
-                #pragma HLS unroll
-                tapa::vec_t<float, 2> centroid_vec_sub;
-                for (int k = 0; k < 2; k++) {
-                    #pragma HLS unroll
-                    centroid_vec_sub[k] = centroid_vec[j * 2 + k];
-                }
-                centroid_streams[c*8+j].write(centroid_vec_sub);
-            }
+            centroid_streams[c].write(centroid_vec);
         }
 
         // Read inp vector and initialize the chain
@@ -264,12 +277,39 @@ void centroid_reader(
     }
 }
 
+void centroid_reader_split(
+    const int in_size,
+    tapa::async_mmap<tapa::vec_t<float, 16>>& centroid,
+    tapa::ostreams<tapa::vec_t<float, 2>, 8>& centroid_fifo
+) {
+    for(int i_req = 0, i_resp = 0; i_resp < (8 * in_size);){
+        #pragma HLS pipeline II=1
+        if((i_req < (8 * in_size)) & !centroid.read_addr.full()){
+            centroid.read_addr.try_write(i_req);
+            ++i_req;
+        }
+        if(!centroid.read_data.empty()){
+            tapa::vec_t<float, 16> tmp;
+            centroid.read_data.try_read(tmp);
+            for(int j = 0; j < 8; j++){
+                #pragma HLS unroll
+                tapa::vec_t<float, 2> tmp_sub;
+                for(int k = 0; k < 2; k++){
+                    #pragma HLS unroll
+                    tmp_sub[k] = tmp[j * 2 + k];
+                }
+                centroid_fifo[j].write(tmp_sub);
+            }
+            ++i_resp;
+        }
+    }
+}
+
 void idx_out_writer(
     const int L,
     const int in_size,
     tapa::istream<ap_uint<8>>& idx_out_fifo,
-    tapa::async_mmap<int>& idx_out,
-    tapa::ostream<bool>& fifo_fin
+    tapa::async_mmap<int>& idx_out
 ) {
     for(int i_req = 0, i_resp = 0; i_resp < (L * in_size);){
         #pragma HLS pipeline II=1 style=stp
@@ -285,7 +325,6 @@ void idx_out_writer(
             i_resp += unsigned(resp)+1;
         }
     }
-    fifo_fin.write(true);
 }
 
 #ifndef TIMING
@@ -306,22 +345,21 @@ void measure_cycle(tapa::istream<bool>& fifo_fin, tapa::mmap<int> cycle_count){
 //top function for testing
 void ccu_fp32_top(
     const int L,
-    tapa::mmap<tapa::vec_t<float, 2>> inp,
+    tapa::mmap<tapa::vec_t<float, 16>> inp,
     tapa::mmap<tapa::vec_t<float, 16>> centroid,
-    tapa::mmap<int> idx_out,
-    tapa::mmap<int> cycle_count
+    tapa::mmaps<int, 8> idx_out
 ) {
-    tapa::stream<tapa::vec_t<float, 2>> input_fifo;
-    tapa::stream<tapa::vec_t<float, 16>> centroid_fifo;
-    tapa::stream<ap_uint<8>> idx_out_fifo;
-    tapa::stream<bool> fifo_fin;
+    tapa::stream<tapa::vec_t<float, 16>> input_fifo;
+    tapa::streams<tapa::vec_t<float, 2>, 8> input_split_fifo;
+    tapa::streams<tapa::vec_t<float, 2>, 8> centroid_fifo;
+    tapa::streams<ap_uint<8>, 8> idx_out_fifo;
 
     tapa::task()
-        .invoke<tapa::join>(input_reader, L, 1, inp, input_fifo)
-        .invoke<tapa::join>(centroid_reader, 1, centroid, centroid_fifo)
-        .invoke<tapa::join>(ccu_fp32, L, 1, input_fifo, centroid_fifo, idx_out_fifo)
-        .invoke<tapa::join>(idx_out_writer, L, 1, idx_out_fifo, idx_out, fifo_fin)
-        .invoke<tapa::join>(measure_cycle, fifo_fin, cycle_count);
+        .invoke<tapa::join>(input_reader_wide, L, 16, inp, input_fifo)
+        .invoke<tapa::join>(input_splitter, L, 8, input_fifo, input_split_fifo)
+        .invoke<tapa::join>(centroid_reader_split, 8, centroid, centroid_fifo)
+        .invoke<tapa::join, 8>(ccu_fp32, L, 1, input_split_fifo, centroid_fifo, idx_out_fifo)
+        .invoke<tapa::join, 8>(idx_out_writer, L, 1, idx_out_fifo, idx_out);
 
 }
 

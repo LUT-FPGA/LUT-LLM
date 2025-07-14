@@ -40,12 +40,13 @@ int main(int argc, char* argv[]) {
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     
     // Test parameters
-    const int L = 100;  // Number of input vectors
+    const int L = 128;  // Number of input vectors per stream
+    const int num_streams = 8;  // Number of parallel streams
     const int num_centroids = 64;
     const int vector_dim = 2;
     
-    std::cout << "Testing CCU FP32 with " << L << " input vectors and " 
-              << num_centroids << " centroids" << std::endl;
+    std::cout << "Testing CCU FP32 with " << L << " input vectors per stream, " 
+              << num_streams << " streams, and " << num_centroids << " centroids" << std::endl;
     
     // Initialize random number generator
     std::random_device rd;
@@ -53,44 +54,47 @@ int main(int argc, char* argv[]) {
     std::uniform_real_distribution<float> dis(-10.0f, 10.0f);
     
     // Generate random centroids (64 centroids, each with 2 elements)
-    std::vector<std::vector<float>> centroids_ref(num_centroids, std::vector<float>(vector_dim));
-    std::vector<tapa::vec_t<float, 16>> centroids_hw(8);  // 8 vectors of 16 floats each
-    
-    for (int i = 0; i < num_centroids; ++i) {
-        for (int j = 0; j < vector_dim; ++j) {
-            float val = dis(gen);
-            centroids_ref[i][j] = val;
-            
-            // Pack into hardware format: 8 reads of 16 floats
-            // Each centroid has 2 elements, so 8 centroids per 16-float vector
-            int vec_idx = i / 8;  // Which 16-float vector
-            int elem_idx = (i % 8) * 2 + j;  // Position within the 16-float vector
-            centroids_hw[vec_idx][elem_idx] = val;
+    std::vector<std::vector<std::vector<float>>> centroids_ref(num_streams, std::vector<std::vector<float>>(num_centroids, std::vector<float>(vector_dim)));
+    std::vector<tapa::vec_t<float, 16>> centroids_hw(64);  // 8 vectors of 16 floats each
+
+    for (int s = 0; s < num_streams; ++s) {
+        for (int i = 0; i < num_centroids; ++i) {
+            for (int k = 0; k < vector_dim; ++k) {
+                float val = dis(gen);
+                centroids_ref[s][i][k] = val;
+                centroids_hw[i][s*vector_dim+k] = val;
+            }
         }
     }
     
     // Generate random input vectors
-    std::vector<tapa::vec_t<float, 2>> input_hw(L);
-    std::vector<std::vector<float>> input_ref(L, std::vector<float>(vector_dim));
+    // Input format: L vectors of 16 elements each (8 streams * 2 elements per stream)
+    std::vector<tapa::vec_t<float, 16>> input_hw(L);
+    std::vector<std::vector<std::vector<float>>> input_ref(num_streams, 
+        std::vector<std::vector<float>>(L, std::vector<float>(vector_dim)));
     
-    for (int i = 0; i < L; ++i) {
-        for (int j = 0; j < vector_dim; ++j) {
-            float val = dis(gen);
-            input_hw[i][j] = val;
-            input_ref[i][j] = val;
+    for (int l = 0; l < L; ++l) {
+        for (int s = 0; s < num_streams; ++s) {
+            for (int j = 0; j < vector_dim; ++j) {
+                float val = dis(gen);
+                // Pack 8 streams of 2-element vectors into 16-element hardware vectors
+                int elem_idx = s * vector_dim + j;
+                input_hw[l][elem_idx] = val;
+                input_ref[s][l][j] = val;
+            }
         }
     }
     
-    // Allocate output arrays
-    std::vector<int> idx_out_hw(L);
-    std::vector<int> idx_out_ref(L);
-
-    std::vector<int> cycle_count_hw(1);
+    // Allocate output arrays - 8 separate arrays for 8 streams
+    std::vector<std::vector<int>> idx_out_hw(num_streams, std::vector<int>(L));
+    std::vector<std::vector<int>> idx_out_ref(num_streams, std::vector<int>(L));
     
-    // Compute reference results
+    // Compute reference results for each stream
     std::cout << "Computing reference results..." << std::endl;
-    for (int i = 0; i < L; ++i) {
-        idx_out_ref[i] = find_closest_centroid(input_ref[i], centroids_ref);
+    for (int s = 0; s < num_streams; ++s) {
+        for (int l = 0; l < L; ++l) {
+            idx_out_ref[s][l] = find_closest_centroid(input_ref[s][l], centroids_ref[s]);
+        }
     }
     
     // Run hardware implementation
@@ -98,50 +102,60 @@ int main(int argc, char* argv[]) {
     
     tapa::invoke(ccu_fp32_top, FLAGS_bitstream,
                 L,
-                tapa::read_only_mmap<tapa::vec_t<float, 2>>(input_hw),
+                tapa::read_only_mmap<tapa::vec_t<float, 16>>(input_hw),
                 tapa::read_only_mmap<tapa::vec_t<float, 16>>(centroids_hw),
-                tapa::write_only_mmap<int>(idx_out_hw),
-                tapa::write_only_mmap<int>(cycle_count_hw));
+                tapa::write_only_mmaps<int, 8>(idx_out_hw));
     
-    std::cout << "Cycle count: " << cycle_count_hw[0] << std::endl;
-    // Verify results
+    // Verify results for each stream
     std::cout << "Verifying results..." << std::endl;
-    int errors = 0;
-    for (int i = 0; i < L; ++i) {
-        if (idx_out_hw[i] != idx_out_ref[i]) {
-            errors++;
-            if (errors <= 10) {  // Print first 10 errors
-                std::cout << "Error at index " << i << ": HW=" << idx_out_hw[i] 
-                         << ", REF=" << idx_out_ref[i] << std::endl;
-                
-                // Print input vector and distances for debugging
-                std::cout << "  Input vector: [" << input_ref[i][0] << ", " << input_ref[i][1] << "]" << std::endl;
-                std::cout << "  HW chosen centroid " << idx_out_hw[i] << ": ["
-                         << centroids_ref[idx_out_hw[i]][0] << ", " 
-                         << centroids_ref[idx_out_hw[i]][1] << "] dist="
-                         << chebyshev_distance(input_ref[i], centroids_ref[idx_out_hw[i]]) << std::endl;
-                std::cout << "  REF chosen centroid " << idx_out_ref[i] << ": ["
-                         << centroids_ref[idx_out_ref[i]][0] << ", " 
-                         << centroids_ref[idx_out_ref[i]][1] << "] dist="
-                         << chebyshev_distance(input_ref[i], centroids_ref[idx_out_ref[i]]) << std::endl;
+    int total_errors = 0;
+    
+    for (int s = 0; s < num_streams; ++s) {
+        int stream_errors = 0;
+        for (int l = 0; l < L; ++l) {
+            if (idx_out_hw[s][l] != idx_out_ref[s][l]) {
+                stream_errors++;
+                total_errors++;
+                if (total_errors <= 10) {  // Print first 10 errors
+                    std::cout << "Error at stream " << s << ", index " << l 
+                             << ": HW=" << idx_out_hw[s][l] 
+                             << ", REF=" << idx_out_ref[s][l] << std::endl;
+                    
+                    // Print input vector and distances for debugging
+                    std::cout << "  Input vector: [" << input_ref[s][l][0] << ", " << input_ref[s][l][1] << "]" << std::endl;
+                    std::cout << "  HW chosen centroid " << idx_out_hw[s][l] << ": ["
+                             << centroids_ref[s][idx_out_hw[s][l]][0] << ", " 
+                             << centroids_ref[s][idx_out_hw[s][l]][1] << "] dist="
+                             << chebyshev_distance(input_ref[s][l], centroids_ref[s][idx_out_hw[s][l]]) << std::endl;
+                    std::cout << "  REF chosen centroid " << idx_out_ref[s][l] << ": ["
+                             << centroids_ref[s][idx_out_ref[s][l]][0] << ", " 
+                             << centroids_ref[s][idx_out_ref[s][l]][1] << "] dist="
+                             << chebyshev_distance(input_ref[s][l], centroids_ref[s][idx_out_ref[s][l]]) << std::endl;
+                }
             }
+        }
+        if (stream_errors > 0) {
+            std::cout << "Stream " << s << ": " << stream_errors << " errors out of " << L << " vectors" << std::endl;
         }
     }
     
-    if (errors == 0) {
-        std::cout << "SUCCESS: All " << L << " results match!" << std::endl;
+    if (total_errors == 0) {
+        std::cout << "SUCCESS: All " << (L * num_streams) << " results match!" << std::endl;
     } else {
-        std::cout << "FAILURE: " << errors << " out of " << L << " results don't match!" << std::endl;
+        std::cout << "FAILURE: " << total_errors << " out of " << (L * num_streams) << " results don't match!" << std::endl;
     }
     
-    // Print some sample results
-    std::cout << "\nSample results (first 10):" << std::endl;
-    for (int i = 0; i < std::min(10, L); ++i) {
-        std::cout << "Input " << i << ": [" << input_ref[i][0] << ", " << input_ref[i][1] 
-                 << "] -> Centroid " << idx_out_hw[i] << " ["
-                 << centroids_ref[idx_out_hw[i]][0] << ", " 
-                 << centroids_ref[idx_out_hw[i]][1] << "]" << std::endl;
+    // Print some sample results from each stream
+    std::cout << "\nSample results (first 5 from each stream):" << std::endl;
+    for (int s = 0; s < num_streams; ++s) {
+        std::cout << "Stream " << s << ":" << std::endl;
+        for (int l = 0; l < std::min(5, L); ++l) {
+            std::cout << "  Input " << l << ": [" << input_ref[s][l][0] << ", " << input_ref[s][l][1] 
+                     << "] -> Centroid " << idx_out_hw[s][l] << " ["
+                     << centroids_ref[s][idx_out_hw[s][l]][0] << ", " 
+                     << centroids_ref[s][idx_out_hw[s][l]][1] << "]" << std::endl;
+        }
     }
     
-    return errors == 0 ? 0 : 1;
+    return total_errors == 0 ? 0 : 1;
 }

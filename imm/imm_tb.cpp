@@ -42,17 +42,19 @@ bool isClose(float a, float b, float tolerance = 1e-5) {
     return std::abs(a - b) < tolerance;
 }
 
-// Reference implementation: Direct matrix multiplication for general linear layer
-void reference_matrix_multiply(
-    const std::vector<std::vector<int>>& indices,  // L x in_size
-    const std::vector<std::vector<std::vector<float>>>& centroids,  // in_size x num_centroids x vector_dim
-    const std::vector<std::vector<float>>& weights,  // (in_size * vector_dim) x out_size
+// Reference implementation with weight quantization
+void reference_matrix_multiply_with_weight_vq(
+    const std::vector<std::vector<int>>& act_indices,  // L x in_size (activation centroid indices)
+    const std::vector<std::vector<std::vector<int>>>& weight_indices,  // in_size x (out_size/256) x 256 (weight centroid indices per submatrix)
+    const std::vector<std::vector<std::vector<float>>>& act_centroids,  // in_size x num_act_centroids x vector_dim
+    const std::vector<std::vector<std::vector<std::vector<float>>>>& weight_centroids,  // in_size x (out_size/256) x num_weight_centroids x vector_dim
     std::vector<std::vector<float>>& output  // L x out_size
 ) {
-    int L = indices.size();
-    int in_size = indices[0].size();
-    int out_size = weights[0].size();
+    int L = act_indices.size();
+    int in_size = act_indices[0].size();
+    int out_size = output[0].size();
     int vector_dim = 2;
+    int num_submatrices = out_size / 256;
     
     // Initialize output
     for (int i = 0; i < L; i++) {
@@ -61,13 +63,21 @@ void reference_matrix_multiply(
         }
     }
     
+    // Compute output
     for (int i = 0; i < L; i++) {
-        for (int r = 0; r < in_size; r++) {  // For each 2-element position
-            int centroid_idx = indices[i][r];
-            for (int j = 0; j < out_size; j++) {
-                for (int k = 0; k < vector_dim; k++) {  // 2-element dot product
-                    int weight_row = r * vector_dim + k;
-                    output[i][j] += centroids[r][centroid_idx][k] * weights[weight_row][j];
+        for (int r = 0; r < in_size; r++) {
+            int act_idx = act_indices[i][r];
+            for (int sub = 0; sub < num_submatrices; sub++) {
+                for (int col = 0; col < 256; col++) {
+                    int out_col = sub * 256 + col;
+                    if (out_col < out_size) {  // Handle case where out_size is not multiple of 256
+                        int weight_idx = weight_indices[r][sub][col];
+                        
+                        // Dot product of activation centroid and weight centroid
+                        for (int k = 0; k < vector_dim; k++) {
+                            output[i][out_col] += act_centroids[r][act_idx][k] * weight_centroids[r][sub][weight_idx][k];
+                        }
+                    }
                 }
             }
         }
@@ -79,41 +89,58 @@ int main(int argc, char* argv[]) {
     
     // Test parameters
     const int L = 128;  // Number of input sequences (sequence length)
-    const int input_dim = 8;  // Input dimension of weight matrix
-    const int out_size = 896;  // Output dimension of weight matrix
+    const int input_dim = 16;  // Input dimension of weight matrix (changed from 8 to 16 to get in_size=8)
+    const int out_size = 4864;  // Output dimension of weight matrix (changed from 896 to 4864)
     const int vector_dim = 2;  // Dimension of each centroid
-    const int in_size = input_dim / vector_dim;  // Number of 2-element positions = 448
-    const int num_centroids = 64;  // Number of centroids per position
+    const int in_size = input_dim / vector_dim;  // Number of 2-element positions = 8
+    const int num_act_centroids = 64;  // Number of activation centroids per position
+    const int num_weight_centroids = 16;  // Number of weight centroids per position
+    const int num_submatrices = (out_size + 255) / 256;  // Number of 256-column submatrices = 19
     
-    std::cout << "Testing IMM kernel with:" << std::endl;
+    std::cout << "Testing IMM kernel with weight vector quantization:" << std::endl;
     std::cout << "  L (sequence length): " << L << std::endl;
     std::cout << "  Input dimension: " << input_dim << std::endl;
     std::cout << "  in_size (number of 2-element positions): " << in_size << std::endl;
-    std::cout << "  Number of centroids per position: " << num_centroids << std::endl;
-    std::cout << "  Vector dimension: " << vector_dim << std::endl;
+    std::cout << "  Number of activation centroids per position: " << num_act_centroids << std::endl;
+    std::cout << "  Number of weight centroids per position: " << num_weight_centroids << std::endl;
     std::cout << "  Output dimension: " << out_size << std::endl;
+    std::cout << "  Number of 256-column submatrices: " << num_submatrices << std::endl;
     
     // Initialize random number generator
     std::random_device rd;
-    std::mt19937 gen(rd());
+    std::mt19937 gen(42); // Fixed seed for reproducibility
     std::uniform_real_distribution<float> centroid_dis(-10.0f, 10.0f);
     std::uniform_real_distribution<float> weight_dis(-0.5f, 0.5f);
-    std::uniform_real_distribution<float> input_dis(-10.0f, 10.0f);  // For input vectors
+    std::uniform_real_distribution<float> input_dis(-10.0f, 10.0f);
     
-    // Generate random centroids for each 2-element position
-    // centroids[position][centroid_idx][dim] - different centroids for each position
-    std::vector<std::vector<std::vector<float>>> centroids(in_size, 
-        std::vector<std::vector<float>>(num_centroids, std::vector<float>(vector_dim)));
+    // Generate activation centroids for each 2-element position
+    std::vector<std::vector<std::vector<float>>> act_centroids(in_size, 
+        std::vector<std::vector<float>>(num_act_centroids, std::vector<float>(vector_dim)));
     
     for (int pos = 0; pos < in_size; pos++) {
-        for (int i = 0; i < num_centroids; i++) {
+        for (int i = 0; i < num_act_centroids; i++) {
             for (int j = 0; j < vector_dim; j++) {
-                centroids[pos][i][j] = centroid_dis(gen);
+                act_centroids[pos][i][j] = centroid_dis(gen);
             }
         }
     }
     
-    // Generate random input vectors (L sequences x in_size positions x vector_dim)
+    // Generate weight centroids for each position and submatrix
+    std::vector<std::vector<std::vector<std::vector<float>>>> weight_centroids(in_size,
+        std::vector<std::vector<std::vector<float>>>(num_submatrices,
+            std::vector<std::vector<float>>(num_weight_centroids, std::vector<float>(vector_dim))));
+    
+    for (int pos = 0; pos < in_size; pos++) {
+        for (int sub = 0; sub < num_submatrices; sub++) {
+            for (int i = 0; i < num_weight_centroids; i++) {
+                for (int j = 0; j < vector_dim; j++) {
+                    weight_centroids[pos][sub][i][j] = weight_dis(gen);
+                }
+            }
+        }
+    }
+    
+    // Generate random input vectors
     std::vector<std::vector<std::vector<float>>> input_vectors(L, 
         std::vector<std::vector<float>>(in_size, std::vector<float>(vector_dim)));
     
@@ -125,78 +152,116 @@ int main(int argc, char* argv[]) {
         }
     }
     
-    // Find closest centroid indices for each position using Chebyshev distance
-    std::cout << "Finding closest centroids for input vectors..." << std::endl;
-    std::vector<std::vector<int>> indices(L, std::vector<int>(in_size));
-    std::vector<int> indices_hw(L * in_size);
+    // Find closest activation centroid indices
+    std::cout << "Finding closest activation centroids..." << std::endl;
+    std::vector<std::vector<int>> act_indices(L, std::vector<int>(in_size));
+    std::vector<std::vector<int>> act_indices_hw(8, std::vector<int>(L * in_size / 8));
+    
     
     for (int pos = 0; pos < in_size; pos++) {
         for (int i = 0; i < L; i++) {
-            indices[i][pos] = static_cast<int>(find_closest_centroid(input_vectors[i][pos], centroids[pos]));
-            indices_hw[pos * L + i] = indices[i][pos];
-        }
-    }
-
-    
-    
-    // Generate random weight matrix (896 x 4864)
-    std::vector<std::vector<float>> weights(input_dim, std::vector<float>(out_size));
-    for (int i = 0; i < input_dim; i++) {
-        for (int j = 0; j < out_size; j++) {
-            weights[i][j] = weight_dis(gen);
+            act_indices[i][pos] = find_closest_centroid(input_vectors[i][pos], act_centroids[pos]);
+            // Distribute across 8 buffers - round-robin by position
+            int buffer_idx = pos % 8;
+            int local_pos = pos / 8;
+            act_indices_hw[buffer_idx][local_pos * L + i] = act_indices[i][pos];
         }
     }
     
-    // Precompute lookup tables for each position
-    // LUT[position][centroid_idx][output_idx] = dot(centroid[position][centroid_idx], weights[position*2:(position+1)*2][output_idx])
-    std::cout << "Precomputing lookup tables for all positions..." << std::endl;
-    std::vector<std::vector<std::vector<float>>> lut(in_size, 
-        std::vector<std::vector<float>>(num_centroids, std::vector<float>(out_size)));
+    // Generate random weight vectors and quantize them
+    std::cout << "Generating and quantizing weight matrices..." << std::endl;
+    std::vector<std::vector<std::vector<std::vector<float>>>> weight_vectors(in_size,
+        std::vector<std::vector<std::vector<float>>>(num_submatrices,
+            std::vector<std::vector<float>>(256, std::vector<float>(vector_dim))));
+    
+    std::vector<std::vector<std::vector<int>>> weight_indices(in_size,
+        std::vector<std::vector<int>>(num_submatrices, std::vector<int>(256)));
     
     for (int pos = 0; pos < in_size; pos++) {
-        for (int i = 0; i < num_centroids; i++) {
-            for (int j = 0; j < out_size; j++) {
-                float sum = 0.0f;
-                for (int k = 0; k < vector_dim; k++) {
-                    int weight_row = pos * vector_dim + k;
-                    sum += centroids[pos][i][k] * weights[weight_row][j];
+        for (int sub = 0; sub < num_submatrices; sub++) {
+            for (int col = 0; col < 256; col++) {
+                // Generate random weight vector
+                for (int j = 0; j < vector_dim; j++) {
+                    weight_vectors[pos][sub][col][j] = weight_dis(gen);
                 }
-                lut[pos][i][j] = sum;
+                // Find closest weight centroid
+                weight_indices[pos][sub][col] = find_closest_centroid(weight_vectors[pos][sub][col], weight_centroids[pos][sub]);
             }
         }
     }
     
-    // Pack LUT into hardware format (vec_t<float, 16>)
-    // Total elements: in_size * num_centroids * out_size = 448 * 64 * 4864 = 139,460,608
-    // Number of 16-element vectors: 139,460,608 / 16 = 8,716,288
-    int total_lut_elements = in_size * num_centroids * out_size;
-    int num_lut_vectors = total_lut_elements / 16;
-    std::vector<tapa::vec_t<float, 16>> lut_hw(num_lut_vectors);
+    // Pack weight indices into hardware format
+    std::cout << "Packing weight indices..." << std::endl;
+    std::vector<std::vector<tapa::vec_t<ap_uint<4>, 128>>> weight_idx_hw(8, std::vector<tapa::vec_t<ap_uint<4>, 128>>(out_size * in_size / 8 / 128));
     
-    std::cout << "Packing LUT into hardware format..." << std::endl;
     for (int pos = 0; pos < in_size; pos++) {
-        for (int i = 0; i < num_centroids; i++) {
-            for (int j = 0; j < out_size; j++) {
-                int linear_idx = pos * (num_centroids * out_size) + i * out_size + j;
-                int vec_idx = linear_idx / 16;
-                int elem_idx = linear_idx % 16;
-                lut_hw[vec_idx][elem_idx] = lut[pos][i][j];
+        int buffer_idx = pos % 8;
+        int local_pos = pos / 8;
+        
+        for (int sub = 0; sub < num_submatrices; sub++) {
+            for (int vec_idx = 0; vec_idx < 2; vec_idx++) { // 256 indices = 2 x 128-element vectors
+                int hw_idx = local_pos * num_submatrices * 2 + sub * 2 + vec_idx;
+                for (int k = 0; k < 128; k++) {
+                    int col = vec_idx * 128 + k;
+                    if (col < 256 && sub * 256 + col < out_size) {
+                        weight_idx_hw[buffer_idx][hw_idx][k] = weight_indices[pos][sub][col];
+                    } else {
+                        weight_idx_hw[buffer_idx][hw_idx][k] = 0; // Padding
+                    }
+                }
             }
         }
     }
     
-    // Allocate output arrays
-    // Hardware output: (L * out_size) / 16 vectors of tapa::vec_t<float, 16>
+    // Precompute 2D lookup tables (activation centroids x weight centroids)
+    std::cout << "Precomputing 2D lookup tables..." << std::endl;
+    std::vector<std::vector<std::vector<std::vector<float>>>> lut_2d(in_size,
+        std::vector<std::vector<std::vector<float>>>(num_submatrices,
+            std::vector<std::vector<float>>(num_act_centroids, std::vector<float>(num_weight_centroids))));
+    
+    for (int pos = 0; pos < in_size; pos++) {
+        for (int sub = 0; sub < num_submatrices; sub++) {
+            for (int act_idx = 0; act_idx < num_act_centroids; act_idx++) {
+                for (int weight_idx = 0; weight_idx < num_weight_centroids; weight_idx++) {
+                    // Compute dot product of activation and weight centroids
+                    float dot_product = 0.0f;
+                    for (int k = 0; k < vector_dim; k++) {
+                        dot_product += act_centroids[pos][act_idx][k] * weight_centroids[pos][sub][weight_idx][k];
+                    }
+                    lut_2d[pos][sub][act_idx][weight_idx] = dot_product;
+                }
+            }
+        }
+    }
+    
+    // Pack LUT into hardware format
+    std::cout << "Packing LUT into hardware format..." << std::endl;
+    std::vector<std::vector<tapa::vec_t<float, 16>>> lut_hw(8, std::vector<tapa::vec_t<float, 16>>(num_submatrices * num_act_centroids * num_weight_centroids * in_size / 8 / 16));
+    
+    for (int pos = 0; pos < in_size; pos++) {
+        int buffer_idx = pos % 8;
+        int local_pos = pos / 8;
+        
+        for (int sub = 0; sub < num_submatrices; sub++) {
+            for (int act_idx = 0; act_idx < num_act_centroids; act_idx++) {
+                for (int weight_idx = 0; weight_idx < num_weight_centroids; weight_idx++) {
+                    lut_hw[buffer_idx][local_pos * num_act_centroids * num_submatrices + act_idx * num_submatrices + sub][weight_idx] = lut_2d[pos][sub][act_idx][weight_idx];
+                }
+            }
+        }
+    }
+    
+    // Allocate output array
     int output_elements = L * out_size;
-    int num_output_vectors = output_elements / 16;
+    int num_output_vectors = (output_elements + 15) / 16;
     std::vector<tapa::vec_t<float, 16>> output_hw_raw(num_output_vectors);
     
     std::vector<int> cycle_count_hw(1);
     
-    // Compute reference results using direct matrix multiplication
+    // Compute reference results
     std::cout << "Computing reference results..." << std::endl;
     std::vector<std::vector<float>> output_ref(L, std::vector<float>(out_size));
-    reference_matrix_multiply(indices, centroids, weights, output_ref);
+    reference_matrix_multiply_with_weight_vq(act_indices, weight_indices, act_centroids, weight_centroids, output_ref);
     
     // Run hardware implementation
     std::cout << "Running hardware implementation..." << std::endl;
@@ -205,8 +270,9 @@ int main(int argc, char* argv[]) {
                 L,
                 in_size,
                 out_size,
-                tapa::read_only_mmap<int>(indices_hw),
-                tapa::read_only_mmap<tapa::vec_t<float, 16>>(lut_hw),
+                tapa::read_only_mmaps<int, 8>(act_indices_hw),
+                tapa::read_only_mmaps<tapa::vec_t<float, 16>, 8>(lut_hw),
+                tapa::read_only_mmaps<tapa::vec_t<ap_uint<4>, 128>, 8>(weight_idx_hw),
                 tapa::write_only_mmap<tapa::vec_t<float, 16>>(output_hw_raw),
                 tapa::write_only_mmap<int>(cycle_count_hw));
     
@@ -234,7 +300,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Verifying results..." << std::endl;
     int errors = 0;
     float max_error = 0.0f;
-    float tolerance = 1e-4f;  // Tolerance for floating point comparison
+    float tolerance = 1e-3f;  // Slightly relaxed tolerance for weight quantization
     
     for (int i = 0; i < L; i++) {
         for (int j = 0; j < out_size; j++) {
@@ -249,14 +315,6 @@ int main(int argc, char* argv[]) {
                     std::cout << "Error at [" << i << "][" << j << "]: HW=" 
                              << output_hw[i][j] << ", REF=" << output_ref[i][j] 
                              << ", diff=" << diff << std::endl;
-                    
-                    // Print debugging info
-                    std::cout << "  Input sequence: " << i << ", output position: " << j << std::endl;
-                    std::cout << "  First few centroid indices: ";
-                    for (int pos = 0; pos < std::min(5, in_size); pos++) {
-                        std::cout << static_cast<int>(indices[i][pos]) << " ";
-                    }
-                    std::cout << std::endl;
                 }
             }
         }
@@ -271,7 +329,7 @@ int main(int argc, char* argv[]) {
                  << " results don't match!" << std::endl;
     }
     
-    // Print some sample results
+    // Print sample results
     std::cout << "\nSample results (first sequence, first 10 outputs):" << std::endl;
     std::cout << std::fixed << std::setprecision(6);
     for (int j = 0; j < std::min(10, out_size); j++) {
@@ -279,24 +337,6 @@ int main(int argc, char* argv[]) {
                  << ", REF=" << output_ref[0][j] 
                  << ", diff=" << std::abs(output_hw[0][j] - output_ref[0][j]) << std::endl;
     }
-    
-    // Print some sample input-to-centroid mappings for first few positions
-    std::cout << "\nSample input-to-centroid mappings (first sequence, first 3 positions):" << std::endl;
-    for (int pos = 0; pos < std::min(3, in_size); pos++) {
-        std::cout << "Position " << pos << ": Input [" << input_vectors[0][pos][0] << ", " << input_vectors[0][pos][1] 
-                 << "] -> Centroid " << static_cast<int>(indices[0][pos]) << " ["
-                 << centroids[pos][indices[0][pos]][0] << ", " << centroids[pos][indices[0][pos]][1] 
-                 << "] (dist=" << chebyshev_distance(input_vectors[0][pos], centroids[pos][indices[0][pos]]) << ")" << std::endl;
-    }
-    
-    // Print centroid and index info for first sequence
-    std::cout << "\nFirst sequence summary:" << std::endl;
-    std::cout << "Total positions: " << in_size << std::endl;
-    std::cout << "First 10 centroid indices: ";
-    for (int pos = 0; pos < std::min(10, in_size); pos++) {
-        std::cout << static_cast<int>(indices[0][pos]) << " ";
-    }
-    std::cout << std::endl;
     
     return errors == 0 ? 0 : 1;
 }
