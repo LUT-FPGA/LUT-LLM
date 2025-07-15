@@ -12,7 +12,9 @@
 constexpr int MAX_SEQ_LEN = 128;
 constexpr int MAX_OUT_SIZE = 4864;
 constexpr int MAX_OUT_SIZE_DIV_2 = MAX_OUT_SIZE >> 1;
+constexpr int MAX_OUT_SIZE_DIV_256 = MAX_OUT_SIZE / 256;
 constexpr int n_cent = 64;
+constexpr int w_n_cent = 16;
 constexpr int QK_DIM = 896 + 64 * 2;
 constexpr int QK_DIM_DIV_2 = QK_DIM >> 1;
 constexpr int V_DIM = 64 * 2;

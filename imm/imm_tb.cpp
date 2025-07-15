@@ -192,7 +192,7 @@ int main(int argc, char* argv[]) {
     
     // Pack weight indices into hardware format
     std::cout << "Packing weight indices..." << std::endl;
-    std::vector<std::vector<tapa::vec_t<ap_uint<4>, 128>>> weight_idx_hw(8, std::vector<tapa::vec_t<ap_uint<4>, 128>>(out_size * in_size / 8 / 128));
+    std::vector<std::vector<tapa::vec_t<ap_uint<8>, 64>>> weight_idx_hw(8, std::vector<tapa::vec_t<ap_uint<8>, 64>>(out_size * in_size / 8 / 128));
     
     for (int pos = 0; pos < in_size; pos++) {
         int buffer_idx = pos % 8;
@@ -201,10 +201,13 @@ int main(int argc, char* argv[]) {
         for (int sub = 0; sub < num_submatrices; sub++) {
             for (int vec_idx = 0; vec_idx < 2; vec_idx++) { // 256 indices = 2 x 128-element vectors
                 int hw_idx = local_pos * num_submatrices * 2 + sub * 2 + vec_idx;
-                for (int k = 0; k < 128; k++) {
-                    int col = vec_idx * 128 + k;
+                for (int k = 0; k < 64; k++) {
+                    int col = vec_idx * 128 + k * 2;
                     if (col < 256 && sub * 256 + col < out_size) {
-                        weight_idx_hw[buffer_idx][hw_idx][k] = weight_indices[pos][sub][col];
+                        ap_uint<8> tmp_idx;
+                        tmp_idx(3, 0) = weight_indices[pos][sub][col];
+                        tmp_idx(7, 4) = weight_indices[pos][sub][col + 1];
+                        weight_idx_hw[buffer_idx][hw_idx][k] = tmp_idx;
                     } else {
                         weight_idx_hw[buffer_idx][hw_idx][k] = 0; // Padding
                     }
@@ -272,7 +275,7 @@ int main(int argc, char* argv[]) {
                 out_size,
                 tapa::read_only_mmaps<int, 8>(act_indices_hw),
                 tapa::read_only_mmaps<tapa::vec_t<float, 16>, 8>(lut_hw),
-                tapa::read_only_mmaps<tapa::vec_t<ap_uint<4>, 128>, 8>(weight_idx_hw),
+                tapa::read_only_mmaps<tapa::vec_t<ap_uint<8>, 64>, 8>(weight_idx_hw),
                 tapa::write_only_mmap<tapa::vec_t<float, 16>>(output_hw_raw),
                 tapa::write_only_mmap<int>(cycle_count_hw));
     

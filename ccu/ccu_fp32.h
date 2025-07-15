@@ -95,7 +95,7 @@ void ccu_fp32(
     tapa::ostream<ap_uint<8>>& idx_out
 ) {
 
-    for(int r = 0; r < in_size; r++){
+    for(int r = 0; r < (in_size >> 3); r++){
         #pragma HLS dataflow disable_start_propagation
 
         // Streams for carrying inp vectors between PEs
@@ -242,9 +242,9 @@ void input_reader_wide(
     tapa::async_mmap<tapa::vec_t<float, 16>>& inp,
     tapa::ostream<tapa::vec_t<float, 16>>& input_fifo
 ) {
-    for(int i_req = 0, i_resp = 0; i_resp < ((L * in_size) >> 4);){
+    for(int i_req = 0, i_resp = 0; i_resp < ((L * in_size) >> 3);){
         #pragma HLS pipeline II=1
-		if((i_req < ((L * in_size) >> 4)) & !inp.read_addr.full()){
+		if((i_req < ((L * in_size) >> 3)) & !inp.read_addr.full()){
             inp.read_addr.try_write(i_req);
             ++i_req;
 		}
@@ -311,7 +311,7 @@ void idx_out_writer(
     tapa::istream<ap_uint<8>>& idx_out_fifo,
     tapa::async_mmap<int>& idx_out
 ) {
-    for(int i_req = 0, i_resp = 0; i_resp < (L * in_size);){
+    for(int i_req = 0, i_resp = 0; i_resp < (L * in_size >> 3);){
         #pragma HLS pipeline II=1 style=stp
         if((i_req < (L * in_size)) & !idx_out_fifo.empty() & !idx_out.write_addr.full() & !idx_out.write_data.full()){
             idx_out.write_addr.try_write(i_req);
@@ -355,11 +355,11 @@ void ccu_fp32_top(
     tapa::streams<ap_uint<8>, 8> idx_out_fifo;
 
     tapa::task()
-        .invoke<tapa::join>(input_reader_wide, L, 16, inp, input_fifo)
+        .invoke<tapa::join>(input_reader_wide, L, 8, inp, input_fifo)
         .invoke<tapa::join>(input_splitter, L, 8, input_fifo, input_split_fifo)
         .invoke<tapa::join>(centroid_reader_split, 8, centroid, centroid_fifo)
-        .invoke<tapa::join, 8>(ccu_fp32, L, 1, input_split_fifo, centroid_fifo, idx_out_fifo)
-        .invoke<tapa::join, 8>(idx_out_writer, L, 1, idx_out_fifo, idx_out);
+        .invoke<tapa::join, 8>(ccu_fp32, L, 8, input_split_fifo, centroid_fifo, idx_out_fifo)
+        .invoke<tapa::join, 8>(idx_out_writer, L, 8, idx_out_fifo, idx_out);
 
 }
 
