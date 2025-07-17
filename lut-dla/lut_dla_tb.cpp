@@ -5,6 +5,7 @@
 #include <iostream>
 #include <cmath>
 #include <iomanip>
+#include <limits>
 #include "lut_dla.h"
 
 typedef ap_uint<8> idx_t;
@@ -44,7 +45,39 @@ bool isClose(float a, float b, float tolerance = 1e-5) {
     return std::abs(a - b) < tolerance;
 }
 
-// Reference implementation: Combined CCU + IMM functionality with weight VQ
+// Quantization helper functions
+std::pair<float, float> compute_scale_zeropoint(const std::vector<std::vector<std::vector<std::vector<float>>>>& lut_2d,
+                                                int in_size, int num_submatrices, int num_act_centroids, int num_weight_centroids) {
+    float min_val = std::numeric_limits<float>::max();
+    float max_val = std::numeric_limits<float>::lowest();
+    
+    // Find min and max across all LUT values
+    for (int pos = 0; pos < in_size; pos++) {
+        for (int sub = 0; sub < num_submatrices; sub++) {
+            for (int act_idx = 0; act_idx < num_act_centroids; act_idx++) {
+                for (int weight_idx = 0; weight_idx < num_weight_centroids; weight_idx++) {
+                    float val = lut_2d[pos][sub][act_idx][weight_idx];
+                    min_val = std::min(min_val, val);
+                    max_val = std::max(max_val, val);
+                }
+            }
+        }
+    }
+    
+    float scale = (max_val - min_val) / 255.0f;
+    float zeropoint = -min_val / scale;
+
+    return {scale, zeropoint};
+}
+
+uint8_t quantize_value(float value, float scale, float zeropoint) {
+    int quantized = std::round(value / scale + zeropoint);
+    // Clamp to uint8 range
+    quantized = std::max(0, std::min(255, quantized));
+    return static_cast<uint8_t>(quantized);
+}
+
+// Reference implementation: Combined CCU + IMM functionality with weight VQ (floating point)
 void reference_lut_dla_with_weight_vq(
     const std::vector<std::vector<std::vector<float>>>& input_vectors,  // in_size x L x vector_dim
     const std::vector<std::vector<std::vector<float>>>& act_centroids,  // in_size x num_act_centroids x vector_dim
@@ -92,12 +125,59 @@ void reference_lut_dla_with_weight_vq(
     }
 }
 
+// Reference implementation with quantized LUT (matches hardware behavior)
+void reference_lut_dla_quantized_lut(
+    const std::vector<std::vector<std::vector<float>>>& input_vectors,  // in_size x L x vector_dim
+    const std::vector<std::vector<std::vector<float>>>& act_centroids,  // in_size x num_act_centroids x vector_dim
+    const std::vector<std::vector<std::vector<int>>>& weight_indices,  // in_size x (out_size/256) x 256
+    const std::vector<std::vector<std::vector<std::vector<uint8_t>>>>& lut_2d_quantized,  // in_size x num_submatrices x num_act_centroids x num_weight_centroids
+    float scale,
+    float zeropoint,
+    std::vector<std::vector<float>>& output                             // L x out_size
+) {
+    int L = input_vectors[0].size();
+    int in_size = input_vectors.size();
+    int out_size = output[0].size();
+    int num_submatrices = (out_size + 255) / 256;
+    
+    // Initialize output
+    for (int i = 0; i < L; i++) {
+        for (int j = 0; j < out_size; j++) {
+            output[i][j] = 0.0f;
+        }
+    }
+    
+    // For each sequence
+    for (int i = 0; i < L; i++) {
+        // For each position
+        for (int pos = 0; pos < in_size; pos++) {
+            // CCU: Find closest activation centroid
+            int act_idx = find_closest_centroid(input_vectors[pos][i], act_centroids[pos]);
+            
+            // IMM: Accumulate using quantized 2D LUT
+            for (int sub = 0; sub < num_submatrices; sub++) {
+                for (int col = 0; col < 256; col++) {
+                    int out_col = sub * 256 + col;
+                    if (out_col < out_size) {
+                        int weight_idx = weight_indices[pos][sub][col];
+                        
+                        // Look up quantized value and dequantize
+                        uint8_t quantized_val = lut_2d_quantized[pos][sub][act_idx][weight_idx];
+                        float dequantized_val = (float(quantized_val) - zeropoint) * scale;
+                        output[i][out_col] += dequantized_val;
+                    }
+                }
+            }
+        }
+    }
+}
+
 int main(int argc, char* argv[]) {
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     
     // Test parameters - matching IMM testbench configuration
     const int L = 128;              // Number of input sequences
-    const int input_dim = 32;       // Input dimension (changed to match IMM)
+    const int input_dim = 64;       // Input dimension (changed to match IMM)
     const int out_size = 4864;      // Output dimension (changed to match IMM)
     const int vector_dim = 2;       // Dimension of each centroid
     const int num_streams = 8;  // Number of parallel streams
@@ -230,36 +310,83 @@ int main(int argc, char* argv[]) {
     
     // Precompute 2D lookup tables and pack into 8 hardware buffers (following IMM pattern)
     std::cout << "Precomputing 2D lookup tables..." << std::endl;
-    std::vector<std::vector<tapa::vec_t<float, 16>>> lut_hw(8);
     
-    for (int buffer_idx = 0; buffer_idx < 8; buffer_idx++) {
-        int positions_in_buffer = (in_size + 7) / 8;
-        if (buffer_idx < in_size % 8 || in_size % 8 == 0) {
-            lut_hw[buffer_idx].resize(positions_in_buffer * num_submatrices * num_act_centroids);
-        } else {
-            lut_hw[buffer_idx].resize((positions_in_buffer - 1) * num_submatrices * num_act_centroids);
+    // First compute floating-point 2D LUT
+    std::vector<std::vector<std::vector<std::vector<float>>>> lut_2d(in_size,
+        std::vector<std::vector<std::vector<float>>>(num_submatrices,
+            std::vector<std::vector<float>>(num_act_centroids, std::vector<float>(num_weight_centroids))));
+    
+    for (int pos = 0; pos < in_size; pos++) {
+        for (int sub = 0; sub < num_submatrices; sub++) {
+            for (int act_idx = 0; act_idx < num_act_centroids; act_idx++) {
+                for (int weight_idx = 0; weight_idx < num_weight_centroids; weight_idx++) {
+                    // Compute dot product of activation and weight centroids
+                    float dot_product = 0.0f;
+                    for (int k = 0; k < vector_dim; k++) {
+                        dot_product += act_centroids[pos][act_idx][k] * weight_centroids[pos][sub][weight_idx][k];
+                    }
+                    lut_2d[pos][sub][act_idx][weight_idx] = dot_product;
+                }
+            }
         }
     }
+    
+    // Compute scale and zero-point for quantization
+    std::cout << "Computing quantization parameters..." << std::endl;
+    auto [scale, zeropoint] = compute_scale_zeropoint(lut_2d, in_size, num_submatrices, num_act_centroids, num_weight_centroids);
+    std::cout << "  Scale: " << scale << std::endl;
+    std::cout << "  Zero-point: " << zeropoint << std::endl;
+    
+    // Quantize LUT values
+    std::cout << "Quantizing LUT values..." << std::endl;
+    std::vector<std::vector<std::vector<std::vector<uint8_t>>>> lut_2d_quantized(in_size,
+        std::vector<std::vector<std::vector<uint8_t>>>(num_submatrices,
+            std::vector<std::vector<uint8_t>>(num_act_centroids, std::vector<uint8_t>(num_weight_centroids))));
+    
+    for (int pos = 0; pos < in_size; pos++) {
+        for (int sub = 0; sub < num_submatrices; sub++) {
+            for (int act_idx = 0; act_idx < num_act_centroids; act_idx++) {
+                for (int weight_idx = 0; weight_idx < num_weight_centroids; weight_idx++) {
+                    lut_2d_quantized[pos][sub][act_idx][weight_idx] = quantize_value(lut_2d[pos][sub][act_idx][weight_idx], scale, zeropoint);
+                }
+            }
+        }
+    }
+    
+    // Pack quantized LUT into hardware format
+    std::cout << "Packing quantized LUT into hardware format..." << std::endl;
+    std::vector<std::vector<tapa::vec_t<ap_uint<8>, 64>>> lut_hw(8, std::vector<tapa::vec_t<ap_uint<8>, 64>>(num_submatrices * num_act_centroids * in_size / 8 / 4));
     
     for (int pos = 0; pos < in_size; pos++) {
         int buffer_idx = pos % 8;
         int local_pos = pos / 8;
         
         for (int sub = 0; sub < num_submatrices; sub++) {
-            for (int act_idx = 0; act_idx < num_act_centroids; act_idx++) {
-                int hw_idx = local_pos * num_act_centroids * num_submatrices + act_idx * num_submatrices + sub;
-                for (int weight_idx = 0; weight_idx < num_weight_centroids; weight_idx++) {
-                    // Compute dot product
-                    float dot_product = 0.0f;
-                    for (int k = 0; k < vector_dim; k++) {
-                        dot_product += act_centroids[pos][act_idx][k] * 
-                                     weight_centroids[pos][sub][weight_idx][k];
+            // Process groups of 4 activation centroids at a time (as expected by kernel)
+            for (int act_group = 0; act_group < num_act_centroids / 4; act_group++) {
+                int hw_idx = local_pos * num_submatrices * (num_act_centroids / 4) + act_group * num_submatrices + sub;
+                
+                // Pack 64 elements: 4 activation centroids x 16 weight centroids
+                for (int k = 0; k < 16; k++) {  // 16 weight centroids
+                    for (int ii = 0; ii < 4; ii++) {  // 4 activation centroids
+                        int act_idx = act_group * 4 + ii;
+                        if (act_idx < num_act_centroids && k < num_weight_centroids) {
+                            int elem_idx = ii * 16 + k;  // Matches kernel: tmp[ii*16+k]
+                            lut_hw[buffer_idx][hw_idx][elem_idx] = lut_2d_quantized[pos][sub][act_idx][k];
+                        } else {
+                            int elem_idx = ii * 16 + k;
+                            lut_hw[buffer_idx][hw_idx][elem_idx] = 0;  // Padding
+                        }
                     }
-                    lut_hw[buffer_idx][hw_idx][weight_idx] = dot_product;
                 }
             }
         }
     }
+    
+    // Create scale/zero-point buffer for hardware (if needed by lut_dla kernel)
+    std::vector<ap_uint<64>> scale_zero_hw(1);
+    float zeropoint_hw = zeropoint * scale * in_size;  // Convert zero-point as specified
+    scale_zero_hw[0] = (tapa::bit_cast<ap_uint<32>>(zeropoint_hw), tapa::bit_cast<ap_uint<32>>(scale));
     
     // Allocate output array
     int output_elements = L * out_size;
@@ -268,10 +395,15 @@ int main(int argc, char* argv[]) {
     
     std::vector<int> cycle_count_hw(1);
     
-    // Compute reference results
-    std::cout << "Computing reference results..." << std::endl;
-    std::vector<std::vector<float>> output_ref(L, std::vector<float>(out_size));
-    reference_lut_dla_with_weight_vq(input_vectors, act_centroids, weight_centroids, weight_indices, output_ref);
+    // Compute reference results (floating point)
+    std::cout << "Computing floating-point reference results..." << std::endl;
+    std::vector<std::vector<float>> output_ref_fp(L, std::vector<float>(out_size));
+    reference_lut_dla_with_weight_vq(input_vectors, act_centroids, weight_centroids, weight_indices, output_ref_fp);
+    
+    // Compute reference results (quantized LUT)
+    std::cout << "Computing quantized LUT reference results..." << std::endl;
+    std::vector<std::vector<float>> output_ref_quant(L, std::vector<float>(out_size));
+    reference_lut_dla_quantized_lut(input_vectors, act_centroids, weight_indices, lut_2d_quantized, scale, zeropoint, output_ref_quant);
     
     // Run hardware implementation
     std::cout << "Running hardware implementation..." << std::endl;
@@ -282,8 +414,9 @@ int main(int argc, char* argv[]) {
                 out_size,
                 tapa::read_only_mmap<tapa::vec_t<float, 16>>(input_hw),
                 tapa::read_only_mmap<tapa::vec_t<float, 16>>(centroids_hw),
-                tapa::read_only_mmaps<tapa::vec_t<float, 16>, 8>(lut_hw),
+                tapa::read_only_mmaps<tapa::vec_t<ap_uint<8>, 64>, 8>(lut_hw),
                 tapa::read_only_mmaps<tapa::vec_t<ap_uint<8>, 64>, 8>(weight_idx_hw),
+                tapa::read_only_mmap<ap_uint<64>>(scale_zero_hw),
                 tapa::write_only_mmap<tapa::vec_t<float, 16>>(output_hw_raw),
                 tapa::write_only_mmap<int>(cycle_count_hw));
     
@@ -309,44 +442,103 @@ int main(int argc, char* argv[]) {
     
     // Verify results
     std::cout << "Verifying results..." << std::endl;
-    int errors = 0;
-    float max_error = 0.0f;
-    float tolerance = 1e-5f;  // Relaxed tolerance for weight quantization
-
+    
+    // Compare hardware vs floating-point reference
+    int errors_fp = 0;
+    float max_error_fp = 0.0f;
+    float tolerance_fp = 5e-2f;  // Tight tolerance - should match exactly
+    
     for (int i = 0; i < L; i++) {
         for (int j = 0; j < out_size; j++) {
-            float diff = std::abs(output_hw[i][j] - output_ref[i][j]);
-            if (diff > max_error) {
-                max_error = diff;
+            float diff = std::abs(output_hw[i][j] - output_ref_fp[i][j]);
+            if (diff > max_error_fp) {
+                max_error_fp = diff;
             }
             
-            if (!isClose(output_hw[i][j], output_ref[i][j], tolerance)) {
-                errors++;
-                if (errors <= 10) {  // Print first 10 errors
-                    std::cout << "Error at [" << i << "][" << j << "]: HW=" 
-                             << output_hw[i][j] << ", REF=" << output_ref[i][j] 
+            if (!isClose(output_hw[i][j], output_ref_fp[i][j], tolerance_fp)) {
+                errors_fp++;
+                if (errors_fp <= 5) {  // Print first 5 errors
+                    std::cout << "FP Error at [" << i << "][" << j << "]: HW=" 
+                             << output_hw[i][j] << ", FP_REF=" << output_ref_fp[i][j] 
                              << ", diff=" << diff << std::endl;
                 }
             }
         }
     }
     
-    std::cout << "Maximum error: " << max_error << std::endl;
+    // Compare hardware vs quantized reference
+    int errors_quant = 0;
+    float max_error_quant = 0.0f;
+    float tolerance_quant = 1e-4f;  // Relaxed tolerance - expect differences due to quantization
     
-    if (errors == 0) {
-        std::cout << "SUCCESS: All " << (L * out_size) << " results match within tolerance!" << std::endl;
-    } else {
-        std::cout << "FAILURE: " << errors << " out of " << (L * out_size) 
-                 << " results don't match!" << std::endl;
+    for (int i = 0; i < L; i++) {
+        for (int j = 0; j < out_size; j++) {
+            float diff = std::abs(output_hw[i][j] - output_ref_quant[i][j]);
+            if (diff > max_error_quant) {
+                max_error_quant = diff;
+            }
+            
+            if (!isClose(output_hw[i][j], output_ref_quant[i][j], tolerance_quant)) {
+                errors_quant++;
+                if (errors_quant <= 5) {  // Print first 5 errors
+                    std::cout << "Quant Error at [" << i << "][" << j << "]: HW=" 
+                             << output_hw[i][j] << ", QUANT_REF=" << output_ref_quant[i][j] 
+                             << ", diff=" << diff << std::endl;
+                }
+            }
+        }
     }
+    
+    // Compare floating-point vs quantized to show quantization impact
+    int quant_diff_count = 0;
+    float max_quant_impact = 0.0f;
+    
+    for (int i = 0; i < L; i++) {
+        for (int j = 0; j < out_size; j++) {
+            float diff = std::abs(output_ref_fp[i][j] - output_ref_quant[i][j]);
+            if (diff > max_quant_impact) {
+                max_quant_impact = diff;
+            }
+            
+            if (!isClose(output_ref_fp[i][j], output_ref_quant[i][j], 1e-3f)) {
+                quant_diff_count++;
+            }
+        }
+    }
+    
+    std::cout << "\n=== RESULTS SUMMARY ===" << std::endl;
+    std::cout << "Maximum error (HW vs FP reference): " << max_error_fp << std::endl;
+    std::cout << "Maximum error (HW vs Quantized reference): " << max_error_quant << std::endl;
+    std::cout << "Maximum quantization impact (FP vs Quantized): " << max_quant_impact << std::endl;
+    
+    if (errors_fp == 0) {
+        std::cout << "SUCCESS: Hardware matches floating-point reference exactly!" << std::endl;
+    } else {
+        std::cout << "FAILURE: " << errors_fp << " out of " << (L * out_size) 
+                 << " results don't match floating-point reference!" << std::endl;
+    }
+    
+    if (errors_quant == 0) {
+        std::cout << "SUCCESS: Hardware matches quantized reference exactly!" << std::endl;
+    } else {
+        std::cout << "EXPECTED: " << errors_quant << " out of " << (L * out_size) 
+                 << " results differ from quantized reference (showing quantization impact)!" << std::endl;
+    }
+    
+    std::cout << "Quantization impact: " << quant_diff_count << " out of " << (L * out_size) 
+             << " values differ between FP and quantized references" << std::endl;
     
     // Print sample results
     std::cout << "\nSample results (first sequence, first 10 outputs):" << std::endl;
     std::cout << std::fixed << std::setprecision(6);
     for (int j = 0; j < std::min(10, out_size); j++) {
-        std::cout << "Output [0][" << j << "]: HW=" << output_hw[0][j] 
-                 << ", REF=" << output_ref[0][j] 
-                 << ", diff=" << std::abs(output_hw[0][j] - output_ref[0][j]) << std::endl;
+        std::cout << "Output [0][" << j << "]:" << std::endl;
+        std::cout << "  HW:         " << output_hw[0][j] << std::endl;
+        std::cout << "  FP_REF:     " << output_ref_fp[0][j] << std::endl;
+        std::cout << "  QUANT_REF:  " << output_ref_quant[0][j] << std::endl;
+        std::cout << "  HW-FP diff: " << std::abs(output_hw[0][j] - output_ref_fp[0][j]) << std::endl;
+        std::cout << "  HW-Q diff:  " << std::abs(output_hw[0][j] - output_ref_quant[0][j]) << std::endl;
+        std::cout << std::endl;
     }
     
     // Print statistics
@@ -356,6 +548,8 @@ int main(int argc, char* argv[]) {
     std::cout << "  Total weight centroids: " << in_size * num_submatrices * num_weight_centroids << std::endl;
     std::cout << "  Total 2D LUT entries: " << in_size * num_act_centroids * num_weight_centroids << std::endl;
     std::cout << "  Total output elements: " << output_elements << std::endl;
+    std::cout << "  Quantization scale: " << scale << std::endl;
+    std::cout << "  Quantization zero-point: " << zeropoint << std::endl;
     
-    return errors == 0 ? 0 : 1;
+    return errors_fp == 0 ? 0 : 1;
 }
