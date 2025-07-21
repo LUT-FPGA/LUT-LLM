@@ -10,7 +10,8 @@
 #include <limits>
 
 constexpr int MAX_SEQ_LEN = 128;
-constexpr int MAX_OUT_SIZE = 4864;
+constexpr int MAX_SEQ_LEN_MUL_2 = MAX_SEQ_LEN * 2;
+constexpr int MAX_OUT_SIZE = 4864 * 2;
 constexpr int MAX_OUT_SIZE_DIV_2 = MAX_OUT_SIZE >> 1;
 constexpr int MAX_OUT_SIZE_DIV_256 = MAX_OUT_SIZE / 256;
 constexpr int n_cent = 64;
@@ -21,7 +22,7 @@ constexpr int V_DIM = 64 * 2;
 constexpr int V_DIM_DIV_2 = V_DIM >> 1;
 constexpr int HEAD_DIM = 64;
 constexpr int HEAD_DIM_DIV_2 = HEAD_DIM >> 1;
-constexpr int HIDDEN_DIM = 896;
+constexpr int HIDDEN_DIM = 1024;
 constexpr int HIDDEN_DIM_DIV_2 = HIDDEN_DIM >> 1;
 constexpr int HEAD_PER_GROUP = 7;
 constexpr int QKV_DIM = 896 + 64 * 4;
@@ -29,7 +30,11 @@ constexpr float EPSILON = 1e-6f;
 constexpr float R_HIDDEN_DIM = 1.0f / float(HIDDEN_DIM);
 constexpr int FFN_DIM = 4864;
 constexpr int INTERM_DIM = 4864;
+constexpr int INTERM_DIM_MUL_2 = INTERM_DIM * 2;
 constexpr int INTERM_DIM_DIV_2 = INTERM_DIM / 2;
+
+constexpr int FFN_LUT_SIZE = HIDDEN_DIM_DIV_2 * INTERM_DIM_MUL_2 + INTERM_DIM_DIV_2 * HIDDEN_DIM;
+constexpr int CENTROID_SIZE = HIDDEN_DIM_DIV_2 + INTERM_DIM_DIV_2;
 
 void repeater(
     const int L,
