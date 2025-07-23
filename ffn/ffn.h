@@ -142,24 +142,24 @@ void memory_matcher_down(
 
 void memory_matcher_acc_overlay(
     const int L,
-    tapa::istreams<tapa::vec_t<ap_uint<44>, 8>, 8>& inbound_fifo, // interleave up and gate
+    tapa::istreams<tapa::vec_t<ap_uint<44>, 8>, 32>& inbound_fifo, // interleave up and gate
     tapa::istream<ap_uint<64>>& scale_zero_fifo,
     tapa::ostream<tapa::vec_t<float, 16>>& up_out_fifo, // stream to splitter
     tapa::ostream<tapa::vec_t<float, 16>>& gate_out_fifo, // stream to silu
     tapa::ostream<tapa::vec_t<float, 16>>& out_fifo
 ) {
     ap_uint<64> linear_out[MAX_SEQ_LEN][MAX_OUT_SIZE_DIV_2];
-    #pragma HLS array_partition variable=linear_out cyclic factor=128 dim=2
+    #pragma HLS array_partition variable=linear_out cyclic factor=512 dim=2
     #pragma HLS bind_storage variable=linear_out type=RAM_2P impl=URAM
 
     for (int round = 0; round < 2; round++) {
 
         for (int i = 0; i < L; i++) {
-            for (int j = 0; j < (INTERM_DIM >> 7); j++){
+            for (int j = 0; j < (INTERM_DIM >> 9); j++){
                 #pragma HLS pipeline II=1
-                for (int k = 0; k < 128; k++) {
+                for (int k = 0; k < 512; k++) {
                     #pragma HLS unroll
-                    linear_out[i][(j << 7) + k] = ap_uint<64>(0); // Initialize output
+                    linear_out[i][(j << 9) + k] = ap_uint<64>(0); // Initialize output
                 }
             }
         }
@@ -180,7 +180,7 @@ void memory_matcher_acc_overlay(
         }
 
         int r_bound = (round == 0) ? (HIDDEN_DIM_DIV_2 >> 3) : (INTERM_DIM_DIV_2 >> 3);
-        int j_bound = (round == 0) ? (INTERM_DIM >> 7) : (HIDDEN_DIM >> 8);
+        int j_bound = (round == 0) ? (INTERM_DIM >> 9) : (HIDDEN_DIM >> 10);
 
         // read indices and parallel match
         for (int r = 0; r < r_bound; r++) {
@@ -190,7 +190,7 @@ void memory_matcher_acc_overlay(
                 for (int j = 0; j < j_bound; j++) {
                     #pragma HLS pipeline II=1
                     
-                    for (int k = 0; k < 8; k++) {
+                    for (int k = 0; k < 32; k++) {
                         #pragma HLS unroll
                         auto tmp_vec = inbound_fifo[k].read();
                         for (int m = 0; m < 8; m++) {
@@ -198,11 +198,11 @@ void memory_matcher_acc_overlay(
                             ap_uint<44> op2 = tmp_vec[m];
                             for (int p = 0; p < 2; p++) {
                                 #pragma HLS unroll
-                                ap_uint<64> acc_reg = linear_out[i][j*128 + k*16 + m*2 + p];
+                                ap_uint<64> acc_reg = linear_out[i][j*512 + k*16 + m*2 + p];
                                 ap_uint<44> simd_a = ap_uint<44>(acc_reg(43, 0));
                                 ap_uint<44> simd_b = ap_uint<44>((ap_uint<22>(op2(p*22+21, p*22+11)),ap_uint<22>(op2(p*22+10, p*22))));
                                 ap_uint<44> simd_out = simd_a + simd_b;
-                                linear_out[i][j*128 + k*16 + m * 2 + p] = simd_out;
+                                linear_out[i][j*512 + k*16 + m * 2 + p] = simd_out;
                             }
                         }
                     }
@@ -270,14 +270,14 @@ void ffn_core(
     tapa::streams<ap_uint<8>, 8, 16> idx_fifo("idx_fifo");
     tapa::streams<tapa::vec_t<ap_uint<8>, 64>, 8> lut_fifo("lut_fifo");
     tapa::streams<tapa::vec_t<ap_uint<8>, 64>, 8> weight_idx_fifo("weight_idx_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 8> psum_0_fifo("psum_0_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 8> psum_1_fifo("psum_1_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 8> psum_2_fifo("psum_2_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 8> psum_3_fifo("psum_3_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 8> psum_4_fifo("psum_4_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 8> psum_5_fifo("psum_5_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 8> psum_6_fifo("psum_6_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 8> psum_7_fifo("psum_7_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 32> psum_0_fifo("psum_0_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 32> psum_1_fifo("psum_1_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 32> psum_2_fifo("psum_2_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 32> psum_3_fifo("psum_3_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 32> psum_4_fifo("psum_4_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 32> psum_5_fifo("psum_5_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 32> psum_6_fifo("psum_6_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 32> psum_7_fifo("psum_7_fifo");
     tapa::stream<ap_uint<64>> scale_zero_fifo("scale_zero_fifo");
     tapa::stream<tapa::vec_t<float, 16>> out_fifo("out_fifo");
 

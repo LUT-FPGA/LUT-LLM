@@ -1,4 +1,4 @@
 .vscode/
 .specstory/
 */*.log
-*/work.out
+*/*.out

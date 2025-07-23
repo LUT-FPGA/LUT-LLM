@@ -87,7 +87,7 @@ void reference_linear_with_weight_vq(
     int L, int in_size, int out_size
 ) {
     int vector_dim = 2;
-    int num_submatrices = (out_size + 255) / 256;
+    int num_submatrices = (out_size + 511) / 512;
     
     // Initialize output
     for (int i = 0; i < L; i++) {
@@ -105,7 +105,7 @@ void reference_linear_with_weight_vq(
             
             // For each weight submatrix 
             for (int sub = 0; sub < num_submatrices; sub++) {
-                int sub_out_size = std::min(256, out_size - sub * 256);
+                int sub_out_size = std::min(512, out_size - sub * 512);
                 for (int j = 0; j < sub_out_size; j++) {
                     // Get weight centroid index for this output position
                     int weight_centroid_idx = weight_indices[pos][sub][j];
@@ -116,8 +116,8 @@ void reference_linear_with_weight_vq(
                         dot_product += act_centroids[pos][act_centroid_idx][k] * 
                                      weight_centroids[pos][sub][weight_centroid_idx][k];
                     }
-                    
-                    output[i][sub * 256 + j] += dot_product;
+
+                    output[i][sub * 512 + j] += dot_product;
                 }
             }
         }
@@ -134,8 +134,8 @@ void reference_linear_quantized_lut(
     std::vector<std::vector<float>>& output,                             // L x out_size
     int L, int in_size, int out_size
 ) {
-    int num_submatrices = (out_size + 255) / 256;
-    
+    int num_submatrices = (out_size + 511) / 512;
+
     // Initialize output
     for (int i = 0; i < L; i++) {
         for (int j = 0; j < out_size; j++) {
@@ -152,7 +152,7 @@ void reference_linear_quantized_lut(
             
             // For each weight submatrix
             for (int sub = 0; sub < num_submatrices; sub++) {
-                int sub_out_size = std::min(256, out_size - sub * 256);
+                int sub_out_size = std::min(512, out_size - sub * 512);
                 for (int j = 0; j < sub_out_size; j++) {
                     // Get weight centroid index for this output position
                     int weight_centroid_idx = weight_indices[pos][sub][j];
@@ -161,7 +161,7 @@ void reference_linear_quantized_lut(
                     uint8_t quantized_val = lut_2d_quantized[pos][sub][act_centroid_idx][weight_centroid_idx];
                     float lut_val = (float(quantized_val) - zeropoint) * scale;
                     
-                    output[i][sub * 256 + j] += lut_val;
+                    output[i][sub * 512 + j] += lut_val;
                 }
             }
         }
@@ -330,8 +330,8 @@ void reference_linear_with_quantized_lut(
     std::vector<std::vector<float>>& output,                             // L x out_size
     int L, int in_size, int out_size
 ) {
-    int num_submatrices = (out_size + 255) / 256;
-    
+    int num_submatrices = (out_size + 511) / 512;
+
     // Initialize output
     for (int i = 0; i < L; i++) {
         for (int j = 0; j < out_size; j++) {
@@ -348,7 +348,7 @@ void reference_linear_with_quantized_lut(
             
             // For each weight submatrix 
             for (int sub = 0; sub < num_submatrices; sub++) {
-                int sub_out_size = std::min(256, out_size - sub * 256);
+                int sub_out_size = std::min(512, out_size - sub * 512);
                 for (int j = 0; j < sub_out_size; j++) {
                     // Get weight centroid index for this output position
                     int weight_centroid_idx = weight_indices[pos][sub][j];
@@ -356,8 +356,8 @@ void reference_linear_with_quantized_lut(
                     // Look up quantized value and dequantize
                     uint8_t quantized_val = lut_2d_quantized[pos][sub][act_centroid_idx][weight_centroid_idx];
                     float dequantized_val = (float(quantized_val) - zeropoint) * scale;
-                    
-                    output[i][sub * 256 + j] += dequantized_val;
+
+                    output[i][sub * 512 + j] += dequantized_val;
                 }
             }
         }
@@ -518,8 +518,8 @@ int main(int argc, char* argv[]) {
     // Calculate dimensions for different projections
     int up_in_size = HIDDEN_DIM / 2;    // Input positions for up/gate projections
     int down_in_size = INTERM_DIM / 2;  // Input positions for down projection
-    int up_num_submatrices = (INTERM_DIM + 255) / 256;  // Number of 256-column submatrices for up/gate
-    int down_num_submatrices = (HIDDEN_DIM + 255) / 256; // Number of 256-column submatrices for down
+    int up_num_submatrices = (INTERM_DIM + 511) / 512;  // Number of 256-column submatrices for up/gate
+    int down_num_submatrices = (HIDDEN_DIM + 511) / 512; // Number of 256-column submatrices for down
     
     std::cout << "  Up projection: " << up_in_size << " positions -> " << INTERM_DIM << " outputs (" << up_num_submatrices << " submatrices)" << std::endl;
     std::cout << "  Down projection: " << down_in_size << " positions -> " << HIDDEN_DIM << " outputs (" << down_num_submatrices << " submatrices)" << std::endl;
@@ -583,7 +583,7 @@ int main(int argc, char* argv[]) {
         std::vector<std::vector<std::vector<float>>>(up_num_submatrices,
             std::vector<std::vector<float>>(num_weight_centroids, std::vector<float>(vector_dim))));
     std::vector<std::vector<std::vector<int>>> up_weight_indices(up_in_size,
-        std::vector<std::vector<int>>(up_num_submatrices, std::vector<int>(256)));
+        std::vector<std::vector<int>>(up_num_submatrices, std::vector<int>(512)));
     
     for (int pos = 0; pos < up_in_size; pos++) {
         for (int sub = 0; sub < up_num_submatrices; sub++) {
@@ -592,7 +592,7 @@ int main(int argc, char* argv[]) {
                     up_weight_centroids[pos][sub][i][j] = weight_dis(gen);
                 }
             }
-            for (int col = 0; col < 256; col++) {
+            for (int col = 0; col < 512; col++) {
                 // Generate random weight vector
                 std::vector<float> weight_vec(vector_dim);
                 for (int j = 0; j < vector_dim; j++) {
@@ -609,7 +609,7 @@ int main(int argc, char* argv[]) {
         std::vector<std::vector<std::vector<float>>>(up_num_submatrices,
             std::vector<std::vector<float>>(num_weight_centroids, std::vector<float>(vector_dim))));
     std::vector<std::vector<std::vector<int>>> gate_weight_indices(up_in_size,
-        std::vector<std::vector<int>>(up_num_submatrices, std::vector<int>(256)));
+        std::vector<std::vector<int>>(up_num_submatrices, std::vector<int>(512)));
     
     for (int pos = 0; pos < up_in_size; pos++) {
         for (int sub = 0; sub < up_num_submatrices; sub++) {
@@ -618,7 +618,7 @@ int main(int argc, char* argv[]) {
                     gate_weight_centroids[pos][sub][i][j] = weight_dis(gen);
                 }
             }
-            for (int col = 0; col < 256; col++) {
+            for (int col = 0; col < 512; col++) {
                 // Generate random weight vector
                 std::vector<float> weight_vec(vector_dim);
                 for (int j = 0; j < vector_dim; j++) {
@@ -635,7 +635,7 @@ int main(int argc, char* argv[]) {
         std::vector<std::vector<std::vector<float>>>(down_num_submatrices,
             std::vector<std::vector<float>>(num_weight_centroids, std::vector<float>(vector_dim))));
     std::vector<std::vector<std::vector<int>>> down_weight_indices(down_in_size,
-        std::vector<std::vector<int>>(down_num_submatrices, std::vector<int>(256)));
+        std::vector<std::vector<int>>(down_num_submatrices, std::vector<int>(512)));
     
     for (int pos = 0; pos < down_in_size; pos++) {
         for (int sub = 0; sub < down_num_submatrices; sub++) {
@@ -644,7 +644,7 @@ int main(int argc, char* argv[]) {
                     down_weight_centroids[pos][sub][i][j] = weight_dis(gen);
                 }
             }
-            for (int col = 0; col < 256; col++) {
+            for (int col = 0; col < 512; col++) {
                 // Generate random weight vector
                 std::vector<float> weight_vec(vector_dim);
                 for (int j = 0; j < vector_dim; j++) {
@@ -880,12 +880,12 @@ int main(int argc, char* argv[]) {
     
     // Create concatenated up+gate weight indices (concatenated in submatrix dimension: first up, then gate)
     std::vector<std::vector<std::vector<int>>> up_gate_weight_indices(up_in_size,
-        std::vector<std::vector<int>>(up_num_submatrices * 2, std::vector<int>(256)));  // Double the submatrix dimension
+        std::vector<std::vector<int>>(up_num_submatrices * 2, std::vector<int>(512)));  // Double the submatrix dimension
     
     // Fill up weight indices first (index 0 to up_num_submatrices-1)
     for (int pos = 0; pos < up_in_size; pos++) {
         for (int sub = 0; sub < up_num_submatrices; sub++) {
-            for (int i = 0; i < 256; i++) {
+            for (int i = 0; i < 512; i++) {
                 up_gate_weight_indices[pos][sub][i] = up_weight_indices[pos][sub][i];
             }
         }
@@ -894,7 +894,7 @@ int main(int argc, char* argv[]) {
     // Fill gate weight indices second (index up_num_submatrices to 2*up_num_submatrices-1)
     for (int pos = 0; pos < up_in_size; pos++) {
         for (int sub = 0; sub < up_num_submatrices; sub++) {
-            for (int i = 0; i < 256; i++) {
+            for (int i = 0; i < 512; i++) {
                 up_gate_weight_indices[pos][sub + up_num_submatrices][i] = gate_weight_indices[pos][sub][i];
             }
         }
@@ -905,8 +905,8 @@ int main(int argc, char* argv[]) {
     std::cout << "  Note: Up and Gate weight indices are concatenated in submatrix dimension (up: 0-" << (up_num_submatrices-1) << ", gate: " << up_num_submatrices << "-" << (2*up_num_submatrices-1) << ")" << std::endl;
     
     // Calculate total weight index vectors needed for hardware format
-    int up_gate_weight_vectors = (up_in_size / 8) * up_num_submatrices * 2 * 2;  // *2 for up+gate, *2 for vec_idx
-    int down_weight_vectors = (down_in_size / 8) * down_num_submatrices * 2;     // *2 for vec_idx
+    int up_gate_weight_vectors = (up_in_size / 8) * up_num_submatrices * 2 * 4;  // *2 for up+gate, *2 for vec_idx
+    int down_weight_vectors = (down_in_size / 8) * down_num_submatrices * 4;     // *2 for vec_idx
     int total_weight_vectors = up_gate_weight_vectors + down_weight_vectors;
     
     std::vector<std::vector<tapa::vec_t<ap_uint<8>, 64>>> weight_idx_hw(8);
@@ -926,11 +926,11 @@ int main(int argc, char* argv[]) {
         int local_pos = pos / 8;
         
         for (int sub = 0; sub < up_num_submatrices * 2; sub++) {  // Iterate through all concatenated submatrices
-            for (int vec_idx = 0; vec_idx < 2; vec_idx++) {
-                int hw_idx = vector_offset + local_pos * up_num_submatrices * 2 * 2 + sub * 2 + vec_idx;
+            for (int vec_idx = 0; vec_idx < 4; vec_idx++) {
+                int hw_idx = vector_offset + local_pos * up_num_submatrices * 2 * 4 + sub * 4 + vec_idx;
                 for (int k = 0; k < 64; k++) {
                     int col = vec_idx * 128 + k * 2;
-                    if (col < 256) {
+                    if (col < 512) {
                         ap_uint<8> tmp_idx;
                         tmp_idx(3, 0) = up_gate_weight_indices[pos][sub][col];
                         tmp_idx(7, 4) = up_gate_weight_indices[pos][sub][col + 1];
@@ -952,11 +952,11 @@ int main(int argc, char* argv[]) {
         int local_pos = pos / 8;
         
         for (int sub = 0; sub < down_num_submatrices; sub++) {
-            for (int vec_idx = 0; vec_idx < 2; vec_idx++) {
-                int hw_idx = vector_offset + local_pos * down_num_submatrices * 2 + sub * 2 + vec_idx;
+            for (int vec_idx = 0; vec_idx < 4; vec_idx++) {
+                int hw_idx = vector_offset + local_pos * down_num_submatrices * 4 + sub * 4 + vec_idx;
                 for (int k = 0; k < 64; k++) {
                     int col = vec_idx * 128 + k * 2;
-                    if (col < 256) {
+                    if (col < 512) {
                         ap_uint<8> tmp_idx;
                         tmp_idx(3, 0) = down_weight_indices[pos][sub][col];
                         tmp_idx(7, 4) = down_weight_indices[pos][sub][col + 1];
