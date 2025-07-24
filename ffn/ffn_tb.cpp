@@ -968,6 +968,43 @@ int main(int argc, char* argv[]) {
             }
         }
     }
+
+    std::vector<std::vector<tapa::vec_t<ap_uint<8>, 64>>> lut_weight_idx_hw(8);
+    for (int buffer_idx = 0; buffer_idx < 8; buffer_idx++) {
+        lut_weight_idx_hw[buffer_idx].resize(lut_hw[0].size() + weight_idx_hw[0].size());
+    }
+
+    const int round_0_lut_bound = (num_act_centroids >> 2) * (INTERM_DIM_MUL_2 >> 9);
+    const int round_1_lut_bound = (num_act_centroids >> 2) * (HIDDEN_DIM >> 9);
+    const int round_0_weight_bound = (INTERM_DIM_MUL_2 >> 7);
+    const int round_1_weight_bound = (HIDDEN_DIM >> 7);
+    const int round_0_bound = (HIDDEN_DIM_DIV_2 >> 3);
+    const int round_1_bound = (INTERM_DIM_DIV_2 >> 3);
+
+    for(int buffer_idx = 0; buffer_idx < 8; buffer_idx++) {
+        int vec_idx = 0;
+        for(int r = 0; r < round_0_bound; r++){
+            for(int i = 0; i < round_0_lut_bound; i++) {
+                lut_weight_idx_hw[buffer_idx][vec_idx] = lut_hw[buffer_idx][i + r * round_0_lut_bound];
+                vec_idx++;
+            }
+            for(int i = 0; i < round_0_weight_bound; i++) {
+                lut_weight_idx_hw[buffer_idx][vec_idx] = weight_idx_hw[buffer_idx][i + r * round_0_weight_bound];
+                vec_idx++;
+            }
+        }
+
+        for(int r = 0; r < round_1_bound; r++){
+            for(int i = 0; i < round_1_lut_bound; i++) {
+                lut_weight_idx_hw[buffer_idx][vec_idx] = lut_hw[buffer_idx][i + r * round_1_lut_bound + round_0_bound * round_0_lut_bound];
+                vec_idx++;
+            }
+            for(int i = 0; i < round_1_weight_bound; i++) {
+                lut_weight_idx_hw[buffer_idx][vec_idx] = weight_idx_hw[buffer_idx][i + r * round_1_weight_bound + round_0_bound * round_0_weight_bound];
+                vec_idx++;
+            }
+        }
+    }
     
     // Allocate output array
     int output_elements = L * HIDDEN_DIM;
@@ -1028,8 +1065,7 @@ int main(int argc, char* argv[]) {
                 L,
                 tapa::read_only_mmap<tapa::vec_t<float, 16>>(input_hw),
                 tapa::read_only_mmap<tapa::vec_t<float, 16>>(centroid_hw),
-                tapa::read_only_mmaps<tapa::vec_t<ap_uint<8>, 64>, 8>(lut_hw),
-                tapa::read_only_mmaps<tapa::vec_t<ap_uint<8>, 64>, 8>(weight_idx_hw),
+                tapa::read_only_mmaps<tapa::vec_t<ap_uint<8>, 64>, 8>(lut_weight_idx_hw),
                 tapa::read_only_mmap<ap_uint<64>>(scale_zero_hw),
                 tapa::write_only_mmap<tapa::vec_t<float, 16>>(output_hw_raw),
                 tapa::write_only_mmap<int>(cycle_count_hw));

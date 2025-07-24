@@ -257,8 +257,7 @@ void ffn_core(
     const int L,
     tapa::mmap<tapa::vec_t<float, 16>> input_buffer,
     tapa::mmap<tapa::vec_t<float, 16>> centroid_buffer,
-    tapa::mmaps<tapa::vec_t<ap_uint<8>, 64>, 8> lut_buffer,
-    tapa::mmaps<tapa::vec_t<ap_uint<8>, 64>, 8> weight_idx_buffer,
+    tapa::mmaps<tapa::vec_t<ap_uint<8>, 64>, 8> lut_weight_idx_buffer,
     tapa::mmap<ap_uint<64>> scale_zero_buffer,
     tapa::mmap<tapa::vec_t<float, 16>> ffn_out_buffer,
     tapa::mmap<int> cycle_count
@@ -268,8 +267,7 @@ void ffn_core(
     tapa::streams<tapa::vec_t<float, 2>, 8> input_split_fifo("input_split_fifo");
     tapa::streams<tapa::vec_t<float, 2>, 8> centroid_fifo("centroid_fifo");
     tapa::streams<ap_uint<8>, 8, 16> idx_fifo("idx_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<8>, 64>, 8> lut_fifo("lut_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<8>, 64>, 8> weight_idx_fifo("weight_idx_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<8>, 64>, 8> lut_weight_idx_fifo("lut_weight_idx_fifo");
     tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 32> psum_0_fifo("psum_0_fifo");
     tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 32> psum_1_fifo("psum_1_fifo");
     tapa::streams<tapa::vec_t<ap_uint<44>, 8>, 32> psum_2_fifo("psum_2_fifo");
@@ -290,20 +288,19 @@ void ffn_core(
 
     tapa::task()
         .invoke<tapa::join>(input_reader_wide, L, HIDDEN_DIM_DIV_2, input_buffer, input_fifo)
-        .invoke<tapa::join, 8>(lut_reader, FFN_LUT_SIZE, lut_buffer, lut_fifo)
+        .invoke<tapa::join, 8>(lut_weight_idx_reader, FFN_LUT_WEIGHT_SIZE, lut_weight_idx_buffer, lut_weight_idx_fifo)
         .invoke<tapa::join>(scale_zero_reader, 3, scale_zero_buffer, scale_zero_fifo)
-        .invoke<tapa::join, 8>(weight_idx_reader, FFN_LUT_SIZE, weight_idx_buffer, weight_idx_fifo)
         .invoke<tapa::join>(input_splitter_ffn, L, input_fifo, up_gate_fifo, input_split_fifo)
         .invoke<tapa::join>(centroid_reader_split, CENTROID_SIZE, centroid_buffer, centroid_fifo)
         .invoke<tapa::join, 8>(ccu_fp32, L, CENTROID_SIZE, input_split_fifo, centroid_fifo, idx_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq_head, L, idx_fifo, lut_fifo, weight_idx_fifo, psum_0_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_fifo, weight_idx_fifo, psum_0_fifo, psum_1_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_fifo, weight_idx_fifo, psum_1_fifo, psum_2_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_fifo, weight_idx_fifo, psum_2_fifo, psum_3_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_fifo, weight_idx_fifo, psum_3_fifo, psum_4_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_fifo, weight_idx_fifo, psum_4_fifo, psum_5_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_fifo, weight_idx_fifo, psum_5_fifo, psum_6_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_fifo, weight_idx_fifo, psum_6_fifo, psum_7_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq_head, L, idx_fifo, lut_weight_idx_fifo, psum_0_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_weight_idx_fifo, psum_0_fifo, psum_1_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_weight_idx_fifo, psum_1_fifo, psum_2_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_weight_idx_fifo, psum_2_fifo, psum_3_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_weight_idx_fifo, psum_3_fifo, psum_4_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_weight_idx_fifo, psum_4_fifo, psum_5_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_weight_idx_fifo, psum_5_fifo, psum_6_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_weight_idx_fifo, psum_6_fifo, psum_7_fifo)
         .invoke<tapa::join>(memory_matcher_acc_overlay, L, psum_7_fifo, scale_zero_fifo, up_out_fifo, gate_before_silu_fifo, out_fifo)
         .invoke<tapa::join>(silu, L, gate_before_silu_fifo, gate_after_silu_fifo)
         .invoke<tapa::join>(element_wise_mul, L, up_out_fifo, gate_after_silu_fifo, up_gate_fifo)
