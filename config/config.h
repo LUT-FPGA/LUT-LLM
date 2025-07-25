@@ -25,6 +25,7 @@ constexpr int HEAD_DIM = 128;
 constexpr int HEAD_DIM_DIV_2 = HEAD_DIM >> 1;
 constexpr int HIDDEN_DIM = 2048;
 constexpr int HIDDEN_DIM_DIV_2 = HIDDEN_DIM >> 1;
+constexpr int HIDDEN_DIM_DIV_4 = HIDDEN_DIM >> 2;
 constexpr int HEAD_PER_GROUP = 2;
 constexpr int QKV_DIM = 2048 + 128 * 16;
 constexpr float EPSILON = 1e-6f;
@@ -35,6 +36,7 @@ constexpr int INTERM_DIM_MUL_2 = INTERM_DIM * 2;
 constexpr int INTERM_DIM_DIV_2 = INTERM_DIM / 2;
 
 constexpr int FFN_LUT_SIZE = HIDDEN_DIM_DIV_2 * INTERM_DIM_MUL_2 + INTERM_DIM_DIV_2 * HIDDEN_DIM;
+constexpr int FFN_LUT_WEIGHT_SIZE = (FFN_LUT_SIZE >> 9) + (FFN_LUT_SIZE >> 11);
 constexpr int CENTROID_SIZE = HIDDEN_DIM_DIV_2 + INTERM_DIM_DIV_2;
 
 void repeater(

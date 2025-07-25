@@ -479,7 +479,7 @@ int main(int argc, char* argv[]) {
     const int num_act_centroids = 64;   // Number of activation centroids per position
     const int num_weight_centroids = 16; // Number of weight centroids per position
     const int vector_dim = 2;       // Dimension of each centroid
-    const int num_streams = 8;      // Number of parallel streams
+    const int num_streams = 16;      // Number of parallel streams
     
     std::cout << "Testing FFN kernel with weight vector quantization:" << std::endl;
     std::cout << "  L (sequence length): " << L << std::endl;
@@ -504,13 +504,22 @@ int main(int argc, char* argv[]) {
         }
     }
     
-    // Pack input into hardware format (L x HIDDEN_DIM/16 vectors of 16 elements)
-    std::vector<tapa::vec_t<float, 16>> input_hw(L * HIDDEN_DIM / 16);
-    for (int i = 0; i < (HIDDEN_DIM / 16); i++) {
+    // Pack input into hardware format for 2 channels (follows CCU input reader pattern)
+    // Channel 0: first half, Channel 1: second half
+    std::vector<std::vector<tapa::vec_t<float, 16>>> input_hw(2);
+    input_hw[0].resize(L * HIDDEN_DIM / 32);  // First half
+    input_hw[1].resize(L * HIDDEN_DIM / 32);  // Second half
+    
+    for (int i = 0; i < (HIDDEN_DIM / 32); i++) {
         for (int j = 0; j < L; j++) {
             int hw_idx = i * L + j;
+            // First channel gets first half of dimensions
             for (int k = 0; k < 16; k++) {
-                input_hw[hw_idx][k] = input[j][i * 16 + k];
+                input_hw[0][hw_idx][k] = input[j][i * 32 + k];
+            }
+            // Second channel gets second half of dimensions 
+            for (int k = 0; k < 16; k++) {
+                input_hw[1][hw_idx][k] = input[j][i * 32 + 16 + k];
             }
         }
     }
@@ -552,27 +561,38 @@ int main(int argc, char* argv[]) {
         }
     }
     
-    // Pack activation centroids into hardware format (CENTROID_SIZE = HIDDEN_DIM_DIV_2 + INTERM_DIM_DIV_2)
+    // Pack activation centroids into hardware format for 2 channels
+    // Split by alternating every 8 vectors between channels
     int total_centroid_positions = up_in_size + down_in_size; // CENTROID_SIZE
-    std::vector<tapa::vec_t<float, 16>> centroid_hw(total_centroid_positions * num_act_centroids / 8);
+    std::vector<std::vector<tapa::vec_t<float, 16>>> centroid_hw(2);
+    centroid_hw[0].resize(total_centroid_positions * num_act_centroids / 16);  // First channel
+    centroid_hw[1].resize(total_centroid_positions * num_act_centroids / 16);  // Second channel
+
+    std::vector<tapa::vec_t<float, 16>> centroid_hw_tmp(total_centroid_positions * num_act_centroids / 8);
+
+
     
-    // Pack up centroids first
+    // Copy up centroids first
     for (int pos = 0; pos < up_in_size; pos++) {
         for (int i = 0; i < num_act_centroids; i++) {
             for (int j = 0; j < vector_dim; j++) {
-                centroid_hw[(pos/num_streams)*num_act_centroids+i][(pos % num_streams)*vector_dim+j] = up_act_centroids[pos][i][j];
+                centroid_hw_tmp[(pos/8)*num_act_centroids+i][(pos % 8)*vector_dim+j] = up_act_centroids[pos][i][j];
             }
         }
     }
     
     // Pack down centroids second
-    int down_offset = (up_in_size / num_streams) * num_act_centroids;
+    int down_offset = (up_in_size / 8) * num_act_centroids;
     for (int pos = 0; pos < down_in_size; pos++) {
         for (int i = 0; i < num_act_centroids; i++) {
             for (int j = 0; j < vector_dim; j++) {
-                centroid_hw[down_offset+(pos/num_streams)*num_act_centroids+i][(pos % num_streams)*vector_dim+j] = down_act_centroids[pos][i][j];
+                centroid_hw_tmp[down_offset+(pos/8)*num_act_centroids+i][(pos % 8)*vector_dim+j] = down_act_centroids[pos][i][j];
             }
         }
+    }
+
+    for (int i = 0; i < centroid_hw_tmp.size(); i++) {
+        centroid_hw[(i/num_act_centroids)%2][((i/num_act_centroids)/2)*num_act_centroids+(i%num_act_centroids)] = centroid_hw_tmp[i];
     }
     
     // Generate weight centroids and indices for each projection
@@ -804,14 +824,14 @@ int main(int argc, char* argv[]) {
     std::cout << "  Note: Up and Gate LUTs are concatenated in submatrix dimension (up: 0-" << (up_num_submatrices-1) << ", gate: " << up_num_submatrices << "-" << (2*up_num_submatrices-1) << ")" << std::endl;
     
     
-    // Pack into 8 hardware buffers (following LUT-DLA pattern)
+    // Pack into 16 hardware buffers (updated from 8 to 16 channels)
     // Calculate total LUT vectors needed for hardware format
-    int up_gate_lut_vectors = (up_in_size / 8) * up_num_submatrices * 2 * (num_act_centroids / 4);
-    int down_lut_vectors = (down_in_size / 8) * down_num_submatrices * (num_act_centroids / 4);
+    int up_gate_lut_vectors = (up_in_size / 16) * up_num_submatrices * 2 * (num_act_centroids / 4);
+    int down_lut_vectors = (down_in_size / 16) * down_num_submatrices * (num_act_centroids / 4);
     int total_lut_vectors = up_gate_lut_vectors + down_lut_vectors;
     
-    std::vector<std::vector<tapa::vec_t<ap_uint<8>, 64>>> lut_hw(8);
-    for (int buffer_idx = 0; buffer_idx < 8; buffer_idx++) {
+    std::vector<std::vector<tapa::vec_t<ap_uint<8>, 64>>> lut_hw(16);
+    for (int buffer_idx = 0; buffer_idx < 16; buffer_idx++) {
         lut_hw[buffer_idx].resize(total_lut_vectors);
     }
     
@@ -821,10 +841,10 @@ int main(int argc, char* argv[]) {
     
     int vector_offset = 0;
     
-    // Pack up+gate LUT first (following LUT-DLA pattern)
+    // Pack up+gate LUT first (following LUT-DLA pattern, now with 16 buffers)
     for (int pos = 0; pos < up_in_size; pos++) {
-        int buffer_idx = pos % 8;
-        int local_pos = pos / 8;
+        int buffer_idx = pos % 16;
+        int local_pos = pos / 16;
         
         for (int sub = 0; sub < up_num_submatrices * 2; sub++) {  // Iterate through all concatenated submatrices
             // Process groups of 4 activation centroids at a time (as expected by kernel)
@@ -851,10 +871,10 @@ int main(int argc, char* argv[]) {
     // Update vector offset for down LUT
     vector_offset += up_gate_lut_vectors;
     
-    // Pack down LUT second (following LUT-DLA pattern)
+    // Pack down LUT second (following LUT-DLA pattern, now with 16 buffers)
     for (int pos = 0; pos < down_in_size; pos++) {
-        int buffer_idx = pos % 8;
-        int local_pos = pos / 8;
+        int buffer_idx = pos % 16;
+        int local_pos = pos / 16;
         
         for (int sub = 0; sub < down_num_submatrices; sub++) {
             // Process groups of 4 activation centroids at a time (as expected by kernel)
@@ -900,17 +920,17 @@ int main(int argc, char* argv[]) {
         }
     }
     
-    // Pack weight indices into 8 hardware buffers (following LUT-DLA pattern)
+    // Pack weight indices into 16 hardware buffers (updated from 8 to 16 channels)
     std::cout << "Packing weight indices into hardware format..." << std::endl;
     std::cout << "  Note: Up and Gate weight indices are concatenated in submatrix dimension (up: 0-" << (up_num_submatrices-1) << ", gate: " << up_num_submatrices << "-" << (2*up_num_submatrices-1) << ")" << std::endl;
     
     // Calculate total weight index vectors needed for hardware format
-    int up_gate_weight_vectors = (up_in_size / 8) * up_num_submatrices * 2 * 4;  // *2 for up+gate, *2 for vec_idx
-    int down_weight_vectors = (down_in_size / 8) * down_num_submatrices * 4;     // *2 for vec_idx
+    int up_gate_weight_vectors = (up_in_size / 16) * up_num_submatrices * 2 * 4;  // *2 for up+gate, *2 for vec_idx
+    int down_weight_vectors = (down_in_size / 16) * down_num_submatrices * 4;     // *2 for vec_idx
     int total_weight_vectors = up_gate_weight_vectors + down_weight_vectors;
     
-    std::vector<std::vector<tapa::vec_t<ap_uint<8>, 64>>> weight_idx_hw(8);
-    for (int buffer_idx = 0; buffer_idx < 8; buffer_idx++) {
+    std::vector<std::vector<tapa::vec_t<ap_uint<8>, 64>>> weight_idx_hw(16);
+    for (int buffer_idx = 0; buffer_idx < 16; buffer_idx++) {
         weight_idx_hw[buffer_idx].resize(total_weight_vectors);
     }
     
@@ -920,10 +940,10 @@ int main(int argc, char* argv[]) {
     
     vector_offset = 0;
     
-    // Pack up+gate weight indices first (following LUT-DLA pattern)
+    // Pack up+gate weight indices first (following LUT-DLA pattern, now with 16 buffers)
     for (int pos = 0; pos < up_in_size; pos++) {
-        int buffer_idx = pos % 8;
-        int local_pos = pos / 8;
+        int buffer_idx = pos % 16;
+        int local_pos = pos / 16;
         
         for (int sub = 0; sub < up_num_submatrices * 2; sub++) {  // Iterate through all concatenated submatrices
             for (int vec_idx = 0; vec_idx < 4; vec_idx++) {
@@ -946,10 +966,10 @@ int main(int argc, char* argv[]) {
     // Update vector offset for down weight indices
     vector_offset += up_gate_weight_vectors;
     
-    // Pack down weight indices second (following LUT-DLA pattern)
+    // Pack down weight indices second (following LUT-DLA pattern, now with 16 buffers)
     for (int pos = 0; pos < down_in_size; pos++) {
-        int buffer_idx = pos % 8;
-        int local_pos = pos / 8;
+        int buffer_idx = pos % 16;
+        int local_pos = pos / 16;
         
         for (int sub = 0; sub < down_num_submatrices; sub++) {
             for (int vec_idx = 0; vec_idx < 4; vec_idx++) {
@@ -969,8 +989,8 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    std::vector<std::vector<tapa::vec_t<ap_uint<8>, 64>>> lut_weight_idx_hw(8);
-    for (int buffer_idx = 0; buffer_idx < 8; buffer_idx++) {
+    std::vector<std::vector<tapa::vec_t<ap_uint<8>, 64>>> lut_weight_idx_hw(16);
+    for (int buffer_idx = 0; buffer_idx < 16; buffer_idx++) {
         lut_weight_idx_hw[buffer_idx].resize(lut_hw[0].size() + weight_idx_hw[0].size());
     }
 
@@ -978,10 +998,10 @@ int main(int argc, char* argv[]) {
     const int round_1_lut_bound = (num_act_centroids >> 2) * (HIDDEN_DIM >> 9);
     const int round_0_weight_bound = (INTERM_DIM_MUL_2 >> 7);
     const int round_1_weight_bound = (HIDDEN_DIM >> 7);
-    const int round_0_bound = (HIDDEN_DIM_DIV_2 >> 3);
-    const int round_1_bound = (INTERM_DIM_DIV_2 >> 3);
+    const int round_0_bound = (HIDDEN_DIM_DIV_2 >> 4);
+    const int round_1_bound = (INTERM_DIM_DIV_2 >> 4);
 
-    for(int buffer_idx = 0; buffer_idx < 8; buffer_idx++) {
+    for(int buffer_idx = 0; buffer_idx < 16; buffer_idx++) {
         int vec_idx = 0;
         for(int r = 0; r < round_0_bound; r++){
             for(int i = 0; i < round_0_lut_bound; i++) {
@@ -1063,9 +1083,9 @@ int main(int argc, char* argv[]) {
     
     tapa::invoke(ffn_core, FLAGS_bitstream,
                 L,
-                tapa::read_only_mmap<tapa::vec_t<float, 16>>(input_hw),
-                tapa::read_only_mmap<tapa::vec_t<float, 16>>(centroid_hw),
-                tapa::read_only_mmaps<tapa::vec_t<ap_uint<8>, 64>, 8>(lut_weight_idx_hw),
+                tapa::read_only_mmaps<tapa::vec_t<float, 16>, 2>(input_hw),
+                tapa::read_only_mmaps<tapa::vec_t<float, 16>, 2>(centroid_hw),
+                tapa::read_only_mmaps<tapa::vec_t<ap_uint<8>, 64>, 16>(lut_weight_idx_hw),
                 tapa::read_only_mmap<ap_uint<64>>(scale_zero_hw),
                 tapa::write_only_mmap<tapa::vec_t<float, 16>>(output_hw_raw),
                 tapa::write_only_mmap<int>(cycle_count_hw));
@@ -1237,8 +1257,8 @@ int main(int argc, char* argv[]) {
     //std::cout << "  Total weight indices: " << total_weight_size << std::endl;
     std::cout << "  Total output elements: " << (L * HIDDEN_DIM) << std::endl;
     std::cout << "  Memory usage:" << std::endl;
-    std::cout << "    Input: " << (input_hw.size() * 16 * sizeof(float)) << " bytes" << std::endl;
-    std::cout << "    Centroids: " << (centroid_hw.size() * 16 * sizeof(float)) << " bytes" << std::endl;
+    std::cout << "    Input: " << (input_hw[0].size() + input_hw[1].size()) * 16 * sizeof(float) << " bytes" << std::endl;
+    std::cout << "    Centroids: " << (centroid_hw[0].size() + centroid_hw[1].size()) * 16 * sizeof(float) << " bytes" << std::endl;
     //std::cout << "    LUTs: " << (total_lut_size * sizeof(uint8_t)) << " bytes" << std::endl;
     //std::cout << "    Weight indices: " << (total_weight_size * sizeof(uint8_t)) << " bytes" << std::endl;
     std::cout << "    Output: " << (output_hw_raw.size() * 16 * sizeof(float)) << " bytes" << std::endl;

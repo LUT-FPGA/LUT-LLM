@@ -95,7 +95,7 @@ void input_splitter_ffn(
 ) {
     for (int round = 0; round < 2; round++) {
         int in_size = (round == 0) ? (HIDDEN_DIM_DIV_2) : (INTERM_DIM_DIV_2);
-        for(int i = 0; i < (L * in_size >> 3); i++){
+        for(int i = 0; i < (L * in_size >> 4); i++){
             #pragma HLS pipeline II=1
             tapa::vec_t<float, 16> input_vec;
             if(round == 0) {
@@ -124,7 +124,7 @@ void ccu_fp32(
     tapa::ostream<ap_uint<8>>& idx_out
 ) {
 
-    for(int r = 0; r < (in_size >> 3); r++){
+    for(int r = 0; r < (in_size >> 4); r++){
         #pragma HLS dataflow disable_start_propagation
 
         // Streams for carrying inp vectors between PEs
@@ -271,9 +271,9 @@ void input_reader_wide(
     tapa::async_mmap<tapa::vec_t<float, 16>>& inp,
     tapa::ostream<tapa::vec_t<float, 16>>& input_fifo
 ) {
-    for(int i_req = 0, i_resp = 0; i_resp < ((L * in_size) >> 3);){
+    for(int i_req = 0, i_resp = 0; i_resp < ((L * in_size) >> 4);){
         #pragma HLS pipeline II=1
-		if((i_req < ((L * in_size) >> 3)) & !inp.read_addr.full()){
+		if((i_req < ((L * in_size) >> 4)) & !inp.read_addr.full()){
             inp.read_addr.try_write(i_req);
             ++i_req;
 		}
@@ -311,9 +311,9 @@ void centroid_reader_split(
     tapa::async_mmap<tapa::vec_t<float, 16>>& centroid,
     tapa::ostreams<tapa::vec_t<float, 2>, 8>& centroid_fifo
 ) {
-    for(int i_req = 0, i_resp = 0; i_resp < (8 * in_size);){
+    for(int i_req = 0, i_resp = 0; i_resp < (4 * in_size);){
         #pragma HLS pipeline II=1
-        if((i_req < (8 * in_size)) & !centroid.read_addr.full()){
+        if((i_req < (4 * in_size)) & !centroid.read_addr.full()){
             centroid.read_addr.try_write(i_req);
             ++i_req;
         }
