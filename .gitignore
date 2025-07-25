@@ -2,3 +2,4 @@
 .specstory/
 */*.log
 */*.out
+*/build/
