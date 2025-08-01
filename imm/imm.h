@@ -327,6 +327,107 @@ void memory_matcher_w_vq(
     }
 }
 
+void memory_matcher_w_vq_dsp(
+    const int L,
+    tapa::istream<idx_t>& idx_fifo,
+    tapa::istream<tapa::vec_t<ap_uint<8>, 64>>& lut_weight_idx_fifo,
+    tapa::istreams<tapa::vec_t<ap_uint<48>, 8>, 32>& inbound_fifo,
+    tapa::ostreams<tapa::vec_t<ap_uint<48>, 8>, 32>& outbound_fifo
+) {
+    for (int round = 0; round < 2; round++){
+    // read indices and parallel match
+        const int in_size = (round == 0) ? HIDDEN_DIM_DIV_2 : INTERM_DIM_DIV_2;
+        const int out_size = (round == 0) ? INTERM_DIM_MUL_2 : HIDDEN_DIM;
+        for (int r = 0; r < (in_size >> 4); r++) {
+            // prefetch LUT for linear layer
+            ap_uint<8> linear_lut[n_cent][w_n_cent][MAX_OUT_SIZE_DIV_512];
+            #pragma HLS array_partition variable=linear_lut complete dim=2
+            #pragma HLS array_partition variable=linear_lut cyclic factor=4 dim=1
+            #pragma HLS array_partition variable=linear_lut cyclic factor=2 dim=3
+            ap_uint<4> weight_idx[MAX_OUT_SIZE];
+            #pragma HLS array_partition variable=weight_idx cyclic factor=1024
+            #pragma HLS bind_storage variable=weight_idx type=RAM_1P impl=LUTRAM
+
+            for(int i = 0; i < (n_cent >> 2); i++) {
+                for (int j = 0; j < (out_size >> 9);){
+                    #pragma HLS pipeline II=1
+                    if(!lut_weight_idx_fifo.empty()){
+                        tapa::vec_t<ap_uint<8>, 64> tmp; lut_weight_idx_fifo.try_read(tmp);
+                        for (int ii = 0; ii < 4; ii++) {
+                            #pragma HLS unroll
+                            for(int k = 0; k < 16; k++) {
+                                #pragma HLS unroll
+                                linear_lut[i*4+ii][k][j] = tmp[ii*16+k];
+                            }
+                        }
+                        j++;
+                    }
+                }
+            }
+
+            for (int i = 0; i < (out_size >> 7);) {
+                #pragma HLS pipeline II=1
+                if(!lut_weight_idx_fifo.empty()){
+                    tapa::vec_t<ap_uint<8>, 64> tmp; lut_weight_idx_fifo.try_read(tmp);
+                    for(int k = 0; k < 64; k++) {
+                        #pragma HLS unroll
+                        weight_idx[i * 128 + k * 2] = ap_uint<4>(tmp[k](3, 0));
+                        weight_idx[i * 128 + k * 2 + 1] = ap_uint<4>(tmp[k](7, 4));
+                    }
+                    i++;
+                }
+            }
+
+            for (int i = 0; i < L; i++) {
+
+                auto idx = idx_fifo.read();
+
+                for (int j = 0; j < (out_size >> 10); j++) {
+                    #pragma HLS pipeline II=1
+
+                    ap_uint<8> linear_out_reg[1024];
+                    #pragma HLS array_partition variable=linear_out_reg complete
+                    ap_uint<8> lut_reg[2][16];
+                    #pragma HLS array_partition variable=lut_reg complete dim=1
+                    #pragma HLS array_partition variable=lut_reg complete dim=2
+
+                    for(int lut_i = 0; lut_i < 2; lut_i++) {
+                        #pragma HLS unroll
+                        for (int k = 0; k < 16; k++) {
+                            #pragma HLS unroll
+                            lut_reg[lut_i][k] = linear_lut[idx][k][j*2+lut_i];
+                        }
+                    }
+                    for (int k = 0; k < 1024; k++) {
+                        #pragma HLS unroll
+                        int w_idx = weight_idx[j * 1024 + k].to_int();
+                        linear_out_reg[k] = lut_reg[k>>9][w_idx];
+                    }
+                    for (int k = 0; k < 32; k++) {
+                        #pragma HLS unroll
+                        auto tmp_vec = inbound_fifo[k].read();
+                        tapa::vec_t<ap_uint<48>, 8> out_vec;
+                        for (int m = 0; m < 8; m++) {
+                            #pragma HLS unroll
+                            ap_uint<48> simd_out;
+                            ap_uint<48> simd_a = tmp_vec[m]; 
+                            ap_uint<48> simd_b;
+                            #pragma HLS bind_op variable=simd_out op=add impl=dsp
+                            for(int p = 0; p < 4; p++) {
+                                #pragma HLS unroll
+                                simd_b(p * 12 + 11, p * 12) = ap_uint<12>(linear_out_reg[k * 32 + m * 4 + p]);
+                            }
+                            simd_out = simd_a + simd_b;
+                            out_vec[m] = simd_out;
+                        }
+                        outbound_fifo[k].write(out_vec);
+                    }
+                }
+            }
+        }
+    }
+}
+
 void memory_matcher_w_vq_head(
     const int L,
     tapa::istream<idx_t>& idx_fifo,
