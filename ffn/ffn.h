@@ -268,24 +268,24 @@ void ffn_core(
 
     tapa::streams<tapa::vec_t<float, 2>, 16> input_split_fifo("input_split_fifo");
     tapa::streams<tapa::vec_t<float, 2>, 16> centroid_fifo("centroid_fifo");
-    tapa::streams<ap_uint<8>, 16, 16> idx_fifo("idx_fifo");
+    tapa::streams<ap_uint<8>, 16, 32> idx_fifo("idx_fifo");
     tapa::streams<tapa::vec_t<ap_uint<8>, 64>, 16> lut_weight_idx_fifo("lut_weight_idx_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32> psum_0_fifo("psum_0_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32> psum_1_fifo("psum_1_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32> psum_2_fifo("psum_2_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32> psum_3_fifo("psum_3_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32> psum_4_fifo("psum_4_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32> psum_5_fifo("psum_5_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32> psum_6_fifo("psum_6_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32> psum_7_fifo("psum_7_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32> psum_8_fifo("psum_8_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32> psum_9_fifo("psum_9_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32> psum_10_fifo("psum_10_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32> psum_11_fifo("psum_11_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32> psum_12_fifo("psum_12_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32> psum_13_fifo("psum_13_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32> psum_14_fifo("psum_14_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32> psum_15_fifo("psum_15_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32, 8> psum_0_fifo("psum_0_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32, 8> psum_1_fifo("psum_1_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32, 8> psum_2_fifo("psum_2_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32, 8> psum_3_fifo("psum_3_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32, 8> psum_4_fifo("psum_4_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32, 8> psum_5_fifo("psum_5_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32, 8> psum_6_fifo("psum_6_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32, 8> psum_7_fifo("psum_7_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32, 8> psum_8_fifo("psum_8_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32, 8> psum_9_fifo("psum_9_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32, 8> psum_10_fifo("psum_10_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32, 8> psum_11_fifo("psum_11_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32, 8> psum_12_fifo("psum_12_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32, 8> psum_13_fifo("psum_13_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32, 8> psum_14_fifo("psum_14_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 32, 8> psum_15_fifo("psum_15_fifo");
     tapa::stream<ap_uint<64>> scale_zero_fifo("scale_zero_fifo");
     tapa::stream<tapa::vec_t<float, 16>> out_fifo("out_fifo");
 
@@ -302,7 +302,7 @@ void ffn_core(
         .invoke<tapa::join>(scale_zero_reader, 3, scale_zero_buffer, scale_zero_fifo)
         .invoke<tapa::join, 2>(input_splitter_ffn, L, input_fifo, up_gate_fifo, input_split_fifo)
         .invoke<tapa::join, 2>(centroid_reader_split, CENTROID_SIZE, centroid_buffer, centroid_fifo)
-        .invoke<tapa::join, 16>(ccu_fp32, L, CENTROID_SIZE, input_split_fifo, centroid_fifo, idx_fifo)
+        .invoke<tapa::join, 16>(treeccu_fp32, L, CENTROID_SIZE, input_split_fifo, centroid_fifo, idx_fifo)
         .invoke<tapa::join>(memory_matcher_w_vq_head, L, idx_fifo, lut_weight_idx_fifo, psum_0_fifo)
         .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_weight_idx_fifo, psum_0_fifo, psum_1_fifo)
         .invoke<tapa::join>(memory_matcher_w_vq_dsp, L, idx_fifo, lut_weight_idx_fifo, psum_1_fifo, psum_2_fifo)

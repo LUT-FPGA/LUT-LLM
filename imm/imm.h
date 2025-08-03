@@ -239,6 +239,8 @@ void memory_matcher_w_vq(
         const int in_size = (round == 0) ? HIDDEN_DIM_DIV_2 : INTERM_DIM_DIV_2;
         const int out_size = (round == 0) ? INTERM_DIM_MUL_2 : HIDDEN_DIM;
         for (int r = 0; r < (in_size >> 4); r++) {
+            #pragma HLS dataflow
+            #pragma HLS loop_tripcount min=128 max=384
             // prefetch LUT for linear layer
             ap_uint<8> linear_lut[n_cent][w_n_cent][MAX_OUT_SIZE_DIV_512];
             #pragma HLS array_partition variable=linear_lut complete dim=2
@@ -249,41 +251,37 @@ void memory_matcher_w_vq(
             #pragma HLS bind_storage variable=weight_idx type=RAM_1P impl=LUTRAM
 
             for(int i = 0; i < (n_cent >> 2); i++) {
-                for (int j = 0; j < (out_size >> 9);){
+                for (int j = 0; j < (out_size >> 9); j++){
                     #pragma HLS pipeline II=1
-                    if(!lut_weight_idx_fifo.empty()){
-                        tapa::vec_t<ap_uint<8>, 64> tmp; lut_weight_idx_fifo.try_read(tmp);
-                        for (int ii = 0; ii < 4; ii++) {
+                    tapa::vec_t<ap_uint<8>, 64> tmp = lut_weight_idx_fifo.read();
+                    for (int ii = 0; ii < 4; ii++) {
+                        #pragma HLS unroll
+                        for(int k = 0; k < 16; k++) {
                             #pragma HLS unroll
-                            for(int k = 0; k < 16; k++) {
-                                #pragma HLS unroll
-                                linear_lut[i*4+ii][k][j] = tmp[ii*16+k];
-                            }
+                            linear_lut[i*4+ii][k][j] = tmp[ii*16+k];
                         }
-                        j++;
                     }
                 }
             }
 
-            for (int i = 0; i < (out_size >> 7);) {
+            for (int i = 0; i < (out_size >> 7); i++) {
                 #pragma HLS pipeline II=1
-                if(!lut_weight_idx_fifo.empty()){
-                    tapa::vec_t<ap_uint<8>, 64> tmp; lut_weight_idx_fifo.try_read(tmp);
-                    for(int k = 0; k < 64; k++) {
-                        #pragma HLS unroll
-                        weight_idx[i * 128 + k * 2] = ap_uint<4>(tmp[k](3, 0));
-                        weight_idx[i * 128 + k * 2 + 1] = ap_uint<4>(tmp[k](7, 4));
-                    }
-                    i++;
+                tapa::vec_t<ap_uint<8>, 64> tmp = lut_weight_idx_fifo.read();
+                for(int k = 0; k < 64; k++) {
+                    #pragma HLS unroll
+                    weight_idx[i * 128 + k * 2] = ap_uint<4>(tmp[k](3, 0));
+                    weight_idx[i * 128 + k * 2 + 1] = ap_uint<4>(tmp[k](7, 4));
                 }
             }
 
             for (int i = 0; i < L; i++) {
+                #pragma HLS loop_tripcount min=16 max=32
 
                 auto idx = idx_fifo.read();
 
                 for (int j = 0; j < (out_size >> 10); j++) {
                     #pragma HLS pipeline II=1
+                    #pragma HLS loop_tripcount min=2 max=12
 
                     ap_uint<8> linear_out_reg[1024];
                     #pragma HLS array_partition variable=linear_out_reg complete
@@ -339,6 +337,8 @@ void memory_matcher_w_vq_dsp(
         const int in_size = (round == 0) ? HIDDEN_DIM_DIV_2 : INTERM_DIM_DIV_2;
         const int out_size = (round == 0) ? INTERM_DIM_MUL_2 : HIDDEN_DIM;
         for (int r = 0; r < (in_size >> 4); r++) {
+            #pragma HLS dataflow
+            #pragma HLS loop_tripcount min=128 max=384
             // prefetch LUT for linear layer
             ap_uint<8> linear_lut[n_cent][w_n_cent][MAX_OUT_SIZE_DIV_512];
             #pragma HLS array_partition variable=linear_lut complete dim=2
@@ -349,32 +349,26 @@ void memory_matcher_w_vq_dsp(
             #pragma HLS bind_storage variable=weight_idx type=RAM_1P impl=LUTRAM
 
             for(int i = 0; i < (n_cent >> 2); i++) {
-                for (int j = 0; j < (out_size >> 9);){
+                for (int j = 0; j < (out_size >> 9); j++){
                     #pragma HLS pipeline II=1
-                    if(!lut_weight_idx_fifo.empty()){
-                        tapa::vec_t<ap_uint<8>, 64> tmp; lut_weight_idx_fifo.try_read(tmp);
-                        for (int ii = 0; ii < 4; ii++) {
+                    tapa::vec_t<ap_uint<8>, 64> tmp = lut_weight_idx_fifo.read();
+                    for (int ii = 0; ii < 4; ii++) {
+                        #pragma HLS unroll
+                        for(int k = 0; k < 16; k++) {
                             #pragma HLS unroll
-                            for(int k = 0; k < 16; k++) {
-                                #pragma HLS unroll
-                                linear_lut[i*4+ii][k][j] = tmp[ii*16+k];
-                            }
+                            linear_lut[i*4+ii][k][j] = tmp[ii*16+k];
                         }
-                        j++;
                     }
                 }
             }
 
-            for (int i = 0; i < (out_size >> 7);) {
+            for (int i = 0; i < (out_size >> 7); i++) {
                 #pragma HLS pipeline II=1
-                if(!lut_weight_idx_fifo.empty()){
-                    tapa::vec_t<ap_uint<8>, 64> tmp; lut_weight_idx_fifo.try_read(tmp);
-                    for(int k = 0; k < 64; k++) {
-                        #pragma HLS unroll
-                        weight_idx[i * 128 + k * 2] = ap_uint<4>(tmp[k](3, 0));
-                        weight_idx[i * 128 + k * 2 + 1] = ap_uint<4>(tmp[k](7, 4));
-                    }
-                    i++;
+                tapa::vec_t<ap_uint<8>, 64> tmp = lut_weight_idx_fifo.read();
+                for(int k = 0; k < 64; k++) {
+                    #pragma HLS unroll
+                    weight_idx[i * 128 + k * 2] = ap_uint<4>(tmp[k](3, 0));
+                    weight_idx[i * 128 + k * 2 + 1] = ap_uint<4>(tmp[k](7, 4));
                 }
             }
 
@@ -439,6 +433,8 @@ void memory_matcher_w_vq_head(
         const int in_size = (round == 0) ? HIDDEN_DIM_DIV_2 : INTERM_DIM_DIV_2;
         const int out_size = (round == 0) ? INTERM_DIM_MUL_2 : HIDDEN_DIM;
         for (int r = 0; r < (in_size >> 4); r++) {
+            #pragma HLS dataflow
+            #pragma HLS loop_tripcount min=128 max=384
             // prefetch LUT for linear layer
             ap_uint<8> linear_lut[n_cent][w_n_cent][MAX_OUT_SIZE_DIV_512];
             #pragma HLS array_partition variable=linear_lut complete dim=2
@@ -449,32 +445,26 @@ void memory_matcher_w_vq_head(
             #pragma HLS bind_storage variable=weight_idx type=RAM_1P impl=LUTRAM
 
             for(int i = 0; i < (n_cent >> 2); i++) {
-                for (int j = 0; j < (out_size >> 9);){
+                for (int j = 0; j < (out_size >> 9); j++){
                     #pragma HLS pipeline II=1
-                    if(!lut_weight_idx_fifo.empty()){
-                        tapa::vec_t<ap_uint<8>, 64> tmp; lut_weight_idx_fifo.try_read(tmp);
-                        for (int ii = 0; ii < 4; ii++) {
+                    tapa::vec_t<ap_uint<8>, 64> tmp = lut_weight_idx_fifo.read();
+                    for (int ii = 0; ii < 4; ii++) {
+                        #pragma HLS unroll
+                        for(int k = 0; k < 16; k++) {
                             #pragma HLS unroll
-                            for(int k = 0; k < 16; k++) {
-                                #pragma HLS unroll
-                                linear_lut[i*4+ii][k][j] = tmp[ii*16+k];
-                            }
+                            linear_lut[i*4+ii][k][j] = tmp[ii*16+k];
                         }
-                        j++;
                     }
                 }
             }
 
-            for (int i = 0; i < (out_size >> 7);) {
+            for (int i = 0; i < (out_size >> 7); i++) {
                 #pragma HLS pipeline II=1
-                if(!lut_weight_idx_fifo.empty()){
-                    tapa::vec_t<ap_uint<8>, 64> tmp; lut_weight_idx_fifo.try_read(tmp);
-                    for(int k = 0; k < 64; k++) {
-                        #pragma HLS unroll
-                        weight_idx[i * 128 + k * 2] = ap_uint<4>(tmp[k](3, 0));
-                        weight_idx[i * 128 + k * 2 + 1] = ap_uint<4>(tmp[k](7, 4));
-                    }
-                    i++;
+                tapa::vec_t<ap_uint<8>, 64> tmp = lut_weight_idx_fifo.read();
+                for(int k = 0; k < 64; k++) {
+                    #pragma HLS unroll
+                    weight_idx[i * 128 + k * 2] = ap_uint<4>(tmp[k](3, 0));
+                    weight_idx[i * 128 + k * 2 + 1] = ap_uint<4>(tmp[k](7, 4));
                 }
             }
 
