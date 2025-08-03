@@ -13,6 +13,8 @@
 #include <cstdint>
 #include <limits>
 
+#include "../config/config.h"
+
 template<int vec_len = 2, int log_vec_len = 1, int idx = 0>
 void distance_pe(
     hls::stream<tapa::vec_t<float, vec_len>>& inp,
@@ -31,7 +33,7 @@ void distance_pe(
 
     for (int r = 0; r < L; r++) {
         #pragma HLS pipeline II=1
-        #pragma HLS loop_tripcount min=1 max=100
+        #pragma HLS loop_tripcount min=1 max=128
 
         auto input_vec = inp.read();
         carry.write(input_vec);
@@ -63,6 +65,66 @@ void distance_pe(
         }
         d_out.write(d_best);
         idx_out.write(idx_best);
+    }
+}
+
+template<int vec_len = 2>
+void argmin_pe_l1(
+    hls::stream<tapa::vec_t<float, vec_len>>& inp1,
+    hls::stream<tapa::vec_t<float, vec_len>>& inp2,
+    hls::stream<float>& d_in1,
+    hls::stream<ap_uint<8>>& idx_in1,
+    hls::stream<float>& d_in2,
+    hls::stream<ap_uint<8>>& idx_in2,
+    hls::stream<float>& d_out,
+    hls::stream<ap_uint<8>>& idx_out,
+    const int L
+) {
+    for (int i = 0; i < L; i++){
+        #pragma HLS pipeline II=1
+        #pragma HLS loop_tripcount min=1 max=128
+
+        inp1.read();
+        inp2.read();
+
+        auto d1 = d_in1.read();
+        auto d2 = d_in2.read();
+        auto idx1 = idx_in1.read();
+        auto idx2 = idx_in2.read();
+
+        if (d1 <= d2) {
+            d_out.write(d1);
+            idx_out.write(idx1);
+        } else {
+            d_out.write(d2);
+            idx_out.write(idx2);
+        }
+    }
+}
+
+template<int vec_len = 2>
+void argmin_pe_l2(
+    hls::stream<float>& d_in1,
+    hls::stream<ap_uint<8>>& idx_in1,
+    hls::stream<float>& d_in2,
+    hls::stream<ap_uint<8>>& idx_in2,
+    hls::stream<ap_uint<8>>& idx_out,
+    const int L
+) {
+    for (int i = 0; i < L; i++){
+        #pragma HLS pipeline II=1
+        #pragma HLS loop_tripcount min=1 max=128
+
+        auto d1 = d_in1.read();
+        auto d2 = d_in2.read();
+        auto idx1 = idx_in1.read();
+        auto idx2 = idx_in2.read();
+
+        if (d1 <= d2) {
+            idx_out.write(idx1);
+        } else {
+            idx_out.write(idx2);
+        }
     }
 }
 
@@ -159,7 +221,7 @@ void ccu_fp32(
         // Read inp vector and initialize the chain
         loop_fill_inp: for(int i = 0; i < L; i++){
             #pragma HLS pipeline II=1
-            #pragma HLS loop_tripcount min=1 max=100
+            #pragma HLS loop_tripcount min=1 max=128
             auto input_vec = inp.read();
             input_carry[0].write(input_vec);
             distance_carry[0].write(3.0e20f);
@@ -235,10 +297,164 @@ void ccu_fp32(
         // Output the final result
         epilogue: for(int i = 0; i < L; i++){
             #pragma HLS pipeline II=1
-            #pragma HLS loop_tripcount min=1 max=100
+            #pragma HLS loop_tripcount min=1 max=128
             distance_carry[64].read();
             input_carry[64].read();
             idx_out.write(index_carry[64].read());
+        }
+    }
+
+}
+
+// 4x16 branching
+void treeccu_fp32(
+    const int L, // sequence length
+    const int in_size, // number of 2-element positions
+    tapa::istream<tapa::vec_t<float, 2>>& inp,
+    tapa::istream<tapa::vec_t<float, 2>>& centroid,
+    tapa::ostream<ap_uint<8>>& idx_out
+) {
+
+    for(int r = 0; r < (in_size >> 4); r++){
+        #pragma HLS dataflow disable_start_propagation
+
+        // Streams for carrying inp vectors between PEs
+        hls::stream<tapa::vec_t<float, 2>> input_carry[17][4];
+        #pragma HLS stream variable=input_carry depth=2
+        #pragma HLS BIND_STORAGE variable=input_carry type=fifo impl=srl
+        
+        // Streams for carrying distances between PEs
+        hls::stream<float> distance_carry[17][4];
+        #pragma HLS stream variable=distance_carry depth=2
+        #pragma HLS BIND_STORAGE variable=distance_carry type=fifo impl=srl
+        
+        // Streams for carrying indices between PEs
+        hls::stream<ap_uint<8>> index_carry[17][4];
+        #pragma HLS stream variable=index_carry depth=2
+        #pragma HLS BIND_STORAGE variable=index_carry type=fifo impl=srl
+        
+        // Streams for centroid data to each PE
+        hls::stream<tapa::vec_t<float, 2>> centroid_streams[16][4];
+        #pragma HLS stream variable=centroid_streams depth=4
+        #pragma HLS BIND_STORAGE variable=centroid_streams type=fifo impl=srl
+
+        hls::stream<float> distance_reduce[2];
+        #pragma HLS stream variable=distance_reduce depth=2
+        #pragma HLS BIND_STORAGE variable=distance_reduce type=fifo impl=srl
+
+        hls::stream<ap_uint<8>> index_reduce[2];
+        #pragma HLS stream variable=index_reduce depth=2
+        #pragma HLS BIND_STORAGE variable=index_reduce type=fifo impl=srl
+
+        hls::stream<ap_uint<8>> index_final;
+        #pragma HLS stream variable=index_final depth=2
+        #pragma HLS BIND_STORAGE variable=index_final type=fifo impl=srl
+        
+        // Read centroid data and distribute to PEs
+        // Each centroid read provides 16 floats, each PE needs 2 floats
+        // So we get 8 centroids per read, need 8 reads for 64 centroids
+        read_centroid: for (int c = 0; c < 4; c++) {
+            for (int cc = 0; cc < 16; cc++) {
+                #pragma HLS pipeline II=1
+                auto centroid_vec = centroid.read();
+                centroid_streams[cc][c].write(centroid_vec);
+            }
+        }
+
+        // Read inp vector and initialize the chain
+        loop_fill_inp: for(int i = 0; i < L; i++){
+            #pragma HLS pipeline II=1
+            #pragma HLS loop_tripcount min=1 max=128
+            auto input_vec = inp.read();
+            for(int j = 0; j < 4; j++) {
+                #pragma HLS unroll
+                input_carry[0][j].write(input_vec);
+                distance_carry[0][j].write(3.0e20f);
+                index_carry[0][j].write(ap_uint<8>((j << 4)));
+            }
+        }
+        
+        // branch 0
+        distance_pe<2, 1, 0>(input_carry[0][0], centroid_streams[0][0], distance_carry[0][0], index_carry[0][0], distance_carry[1][0], index_carry[1][0], input_carry[1][0], L);
+        distance_pe<2, 1, 1>(input_carry[1][0], centroid_streams[1][0], distance_carry[1][0], index_carry[1][0], distance_carry[2][0], index_carry[2][0], input_carry[2][0], L);
+        distance_pe<2, 1, 2>(input_carry[2][0], centroid_streams[2][0], distance_carry[2][0], index_carry[2][0], distance_carry[3][0], index_carry[3][0], input_carry[3][0], L);
+        distance_pe<2, 1, 3>(input_carry[3][0], centroid_streams[3][0], distance_carry[3][0], index_carry[3][0], distance_carry[4][0], index_carry[4][0], input_carry[4][0], L);
+        distance_pe<2, 1, 4>(input_carry[4][0], centroid_streams[4][0], distance_carry[4][0], index_carry[4][0], distance_carry[5][0], index_carry[5][0], input_carry[5][0], L);
+        distance_pe<2, 1, 5>(input_carry[5][0], centroid_streams[5][0], distance_carry[5][0], index_carry[5][0], distance_carry[6][0], index_carry[6][0], input_carry[6][0], L);
+        distance_pe<2, 1, 6>(input_carry[6][0], centroid_streams[6][0], distance_carry[6][0], index_carry[6][0], distance_carry[7][0], index_carry[7][0], input_carry[7][0], L);
+        distance_pe<2, 1, 7>(input_carry[7][0], centroid_streams[7][0], distance_carry[7][0], index_carry[7][0], distance_carry[8][0], index_carry[8][0], input_carry[8][0], L);
+        distance_pe<2, 1, 8>(input_carry[8][0], centroid_streams[8][0], distance_carry[8][0], index_carry[8][0], distance_carry[9][0], index_carry[9][0], input_carry[9][0], L);
+        distance_pe<2, 1, 9>(input_carry[9][0], centroid_streams[9][0], distance_carry[9][0], index_carry[9][0], distance_carry[10][0], index_carry[10][0], input_carry[10][0], L);
+        distance_pe<2, 1, 10>(input_carry[10][0], centroid_streams[10][0], distance_carry[10][0], index_carry[10][0], distance_carry[11][0], index_carry[11][0], input_carry[11][0], L);
+        distance_pe<2, 1, 11>(input_carry[11][0], centroid_streams[11][0], distance_carry[11][0], index_carry[11][0], distance_carry[12][0], index_carry[12][0], input_carry[12][0], L);
+        distance_pe<2, 1, 12>(input_carry[12][0], centroid_streams[12][0], distance_carry[12][0], index_carry[12][0], distance_carry[13][0], index_carry[13][0], input_carry[13][0], L);
+        distance_pe<2, 1, 13>(input_carry[13][0], centroid_streams[13][0], distance_carry[13][0], index_carry[13][0], distance_carry[14][0], index_carry[14][0], input_carry[14][0], L);
+        distance_pe<2, 1, 14>(input_carry[14][0], centroid_streams[14][0], distance_carry[14][0], index_carry[14][0], distance_carry[15][0], index_carry[15][0], input_carry[15][0], L);
+        distance_pe<2, 1, 15>(input_carry[15][0], centroid_streams[15][0], distance_carry[15][0], index_carry[15][0], distance_carry[16][0], index_carry[16][0], input_carry[16][0], L);
+
+        // branch 1
+        distance_pe<2, 1, 16>(input_carry[0][1], centroid_streams[0][1], distance_carry[0][1], index_carry[0][1], distance_carry[1][1], index_carry[1][1], input_carry[1][1], L);
+        distance_pe<2, 1, 17>(input_carry[1][1], centroid_streams[1][1], distance_carry[1][1], index_carry[1][1], distance_carry[2][1], index_carry[2][1], input_carry[2][1], L);
+        distance_pe<2, 1, 18>(input_carry[2][1], centroid_streams[2][1], distance_carry[2][1], index_carry[2][1], distance_carry[3][1], index_carry[3][1], input_carry[3][1], L);
+        distance_pe<2, 1, 19>(input_carry[3][1], centroid_streams[3][1], distance_carry[3][1], index_carry[3][1], distance_carry[4][1], index_carry[4][1], input_carry[4][1], L);
+        distance_pe<2, 1, 20>(input_carry[4][1], centroid_streams[4][1], distance_carry[4][1], index_carry[4][1], distance_carry[5][1], index_carry[5][1], input_carry[5][1], L);
+        distance_pe<2, 1, 21>(input_carry[5][1], centroid_streams[5][1], distance_carry[5][1], index_carry[5][1], distance_carry[6][1], index_carry[6][1], input_carry[6][1], L);
+        distance_pe<2, 1, 22>(input_carry[6][1], centroid_streams[6][1], distance_carry[6][1], index_carry[6][1], distance_carry[7][1], index_carry[7][1], input_carry[7][1], L);
+        distance_pe<2, 1, 23>(input_carry[7][1], centroid_streams[7][1], distance_carry[7][1], index_carry[7][1], distance_carry[8][1], index_carry[8][1], input_carry[8][1], L);
+        distance_pe<2, 1, 24>(input_carry[8][1], centroid_streams[8][1], distance_carry[8][1], index_carry[8][1], distance_carry[9][1], index_carry[9][1], input_carry[9][1], L);
+        distance_pe<2, 1, 25>(input_carry[9][1], centroid_streams[9][1], distance_carry[9][1], index_carry[9][1], distance_carry[10][1], index_carry[10][1], input_carry[10][1], L);
+        distance_pe<2, 1, 26>(input_carry[10][1], centroid_streams[10][1], distance_carry[10][1], index_carry[10][1], distance_carry[11][1], index_carry[11][1], input_carry[11][1], L);
+        distance_pe<2, 1, 27>(input_carry[11][1], centroid_streams[11][1], distance_carry[11][1], index_carry[11][1], distance_carry[12][1], index_carry[12][1], input_carry[12][1], L);
+        distance_pe<2, 1, 28>(input_carry[12][1], centroid_streams[12][1], distance_carry[12][1], index_carry[12][1], distance_carry[13][1], index_carry[13][1], input_carry[13][1], L);
+        distance_pe<2, 1, 29>(input_carry[13][1], centroid_streams[13][1], distance_carry[13][1], index_carry[13][1], distance_carry[14][1], index_carry[14][1], input_carry[14][1], L);
+        distance_pe<2, 1, 30>(input_carry[14][1], centroid_streams[14][1], distance_carry[14][1], index_carry[14][1], distance_carry[15][1], index_carry[15][1], input_carry[15][1], L);
+        distance_pe<2, 1, 31>(input_carry[15][1], centroid_streams[15][1], distance_carry[15][1], index_carry[15][1], distance_carry[16][1], index_carry[16][1], input_carry[16][1], L);
+
+        // branch 2
+        distance_pe<2, 1, 32>(input_carry[0][2], centroid_streams[0][2], distance_carry[0][2], index_carry[0][2], distance_carry[1][2], index_carry[1][2], input_carry[1][2], L);
+        distance_pe<2, 1, 33>(input_carry[1][2], centroid_streams[1][2], distance_carry[1][2], index_carry[1][2], distance_carry[2][2], index_carry[2][2], input_carry[2][2], L);
+        distance_pe<2, 1, 34>(input_carry[2][2], centroid_streams[2][2], distance_carry[2][2], index_carry[2][2], distance_carry[3][2], index_carry[3][2], input_carry[3][2], L);
+        distance_pe<2, 1, 35>(input_carry[3][2], centroid_streams[3][2], distance_carry[3][2], index_carry[3][2], distance_carry[4][2], index_carry[4][2], input_carry[4][2], L);
+        distance_pe<2, 1, 36>(input_carry[4][2], centroid_streams[4][2], distance_carry[4][2], index_carry[4][2], distance_carry[5][2], index_carry[5][2], input_carry[5][2], L);
+        distance_pe<2, 1, 37>(input_carry[5][2], centroid_streams[5][2], distance_carry[5][2], index_carry[5][2], distance_carry[6][2], index_carry[6][2], input_carry[6][2], L);
+        distance_pe<2, 1, 38>(input_carry[6][2], centroid_streams[6][2], distance_carry[6][2], index_carry[6][2], distance_carry[7][2], index_carry[7][2], input_carry[7][2], L);
+        distance_pe<2, 1, 39>(input_carry[7][2], centroid_streams[7][2], distance_carry[7][2], index_carry[7][2], distance_carry[8][2], index_carry[8][2], input_carry[8][2], L);
+        distance_pe<2, 1, 40>(input_carry[8][2], centroid_streams[8][2], distance_carry[8][2], index_carry[8][2], distance_carry[9][2], index_carry[9][2], input_carry[9][2], L);
+        distance_pe<2, 1, 41>(input_carry[9][2], centroid_streams[9][2], distance_carry[9][2], index_carry[9][2], distance_carry[10][2], index_carry[10][2], input_carry[10][2], L);
+        distance_pe<2, 1, 42>(input_carry[10][2], centroid_streams[10][2], distance_carry[10][2], index_carry[10][2], distance_carry[11][2], index_carry[11][2], input_carry[11][2], L);
+        distance_pe<2, 1, 43>(input_carry[11][2], centroid_streams[11][2], distance_carry[11][2], index_carry[11][2], distance_carry[12][2], index_carry[12][2], input_carry[12][2], L);
+        distance_pe<2, 1, 44>(input_carry[12][2], centroid_streams[12][2], distance_carry[12][2], index_carry[12][2], distance_carry[13][2], index_carry[13][2], input_carry[13][2], L);
+        distance_pe<2, 1, 45>(input_carry[13][2], centroid_streams[13][2], distance_carry[13][2], index_carry[13][2], distance_carry[14][2], index_carry[14][2], input_carry[14][2], L);
+        distance_pe<2, 1, 46>(input_carry[14][2], centroid_streams[14][2], distance_carry[14][2], index_carry[14][2], distance_carry[15][2], index_carry[15][2], input_carry[15][2], L);
+        distance_pe<2, 1, 47>(input_carry[15][2], centroid_streams[15][2], distance_carry[15][2], index_carry[15][2], distance_carry[16][2], index_carry[16][2], input_carry[16][2], L); 
+
+        // branch 3
+        distance_pe<2, 1, 48>(input_carry[0][3], centroid_streams[0][3], distance_carry[0][3], index_carry[0][3], distance_carry[1][3], index_carry[1][3], input_carry[1][3], L);
+        distance_pe<2, 1, 49>(input_carry[1][3], centroid_streams[1][3], distance_carry[1][3], index_carry[1][3], distance_carry[2][3], index_carry[2][3], input_carry[2][3], L);
+        distance_pe<2, 1, 50>(input_carry[2][3], centroid_streams[2][3], distance_carry[2][3], index_carry[2][3], distance_carry[3][3], index_carry[3][3], input_carry[3][3], L);
+        distance_pe<2, 1, 51>(input_carry[3][3], centroid_streams[3][3], distance_carry[3][3], index_carry[3][3], distance_carry[4][3], index_carry[4][3], input_carry[4][3], L);
+        distance_pe<2, 1, 52>(input_carry[4][3], centroid_streams[4][3], distance_carry[4][3], index_carry[4][3], distance_carry[5][3], index_carry[5][3], input_carry[5][3], L);
+        distance_pe<2, 1, 53>(input_carry[5][3], centroid_streams[5][3], distance_carry[5][3], index_carry[5][3], distance_carry[6][3], index_carry[6][3], input_carry[6][3], L);
+        distance_pe<2, 1, 54>(input_carry[6][3], centroid_streams[6][3], distance_carry[6][3], index_carry[6][3], distance_carry[7][3], index_carry[7][3], input_carry[7][3], L);
+        distance_pe<2, 1, 55>(input_carry[7][3], centroid_streams[7][3], distance_carry[7][3], index_carry[7][3], distance_carry[8][3], index_carry[8][3], input_carry[8][3], L);
+        distance_pe<2, 1, 56>(input_carry[8][3], centroid_streams[8][3], distance_carry[8][3], index_carry[8][3], distance_carry[9][3], index_carry[9][3], input_carry[9][3], L);
+        distance_pe<2, 1, 57>(input_carry[9][3], centroid_streams[9][3], distance_carry[9][3], index_carry[9][3], distance_carry[10][3], index_carry[10][3], input_carry[10][3], L);
+        distance_pe<2, 1, 58>(input_carry[10][3], centroid_streams[10][3], distance_carry[10][3], index_carry[10][3], distance_carry[11][3], index_carry[11][3], input_carry[11][3], L);
+        distance_pe<2, 1, 59>(input_carry[11][3], centroid_streams[11][3], distance_carry[11][3], index_carry[11][3], distance_carry[12][3], index_carry[12][3], input_carry[12][3], L);
+        distance_pe<2, 1, 60>(input_carry[12][3], centroid_streams[12][3], distance_carry[12][3], index_carry[12][3], distance_carry[13][3], index_carry[13][3], input_carry[13][3], L);
+        distance_pe<2, 1, 61>(input_carry[13][3], centroid_streams[13][3], distance_carry[13][3], index_carry[13][3], distance_carry[14][3], index_carry[14][3], input_carry[14][3], L);
+        distance_pe<2, 1, 62>(input_carry[14][3], centroid_streams[14][3], distance_carry[14][3], index_carry[14][3], distance_carry[15][3], index_carry[15][3], input_carry[15][3], L);
+        distance_pe<2, 1, 63>(input_carry[15][3], centroid_streams[15][3], distance_carry[15][3], index_carry[15][3], distance_carry[16][3], index_carry[16][3], input_carry[16][3], L);
+
+        argmin_pe_l1<2>(input_carry[16][0], input_carry[16][1], distance_carry[16][0], index_carry[16][0], distance_carry[16][1], index_carry[16][1], distance_reduce[0], index_reduce[0], L);
+        argmin_pe_l1<2>(input_carry[16][2], input_carry[16][3], distance_carry[16][2], index_carry[16][2], distance_carry[16][3], index_carry[16][3], distance_reduce[1], index_reduce[1], L);
+        argmin_pe_l2<2>(distance_reduce[0], index_reduce[0], distance_reduce[1], index_reduce[1], index_final, L);
+
+        // Output the final result
+        epilogue: for(int i = 0; i < L; i++){
+            #pragma HLS pipeline II=1
+            #pragma HLS loop_tripcount min=1 max=128
+            idx_out.write(index_final.read());
         }
     }
 
@@ -378,16 +594,16 @@ void ccu_fp32_top(
     tapa::mmap<tapa::vec_t<float, 16>> centroid,
     tapa::mmaps<int, 8> idx_out
 ) {
-    tapa::stream<tapa::vec_t<float, 16>> input_fifo;
-    tapa::streams<tapa::vec_t<float, 2>, 8> input_split_fifo;
-    tapa::streams<tapa::vec_t<float, 2>, 8> centroid_fifo;
-    tapa::streams<ap_uint<8>, 8> idx_out_fifo;
+    tapa::stream<tapa::vec_t<float, 16>> input_fifo("input_fifo");
+    tapa::streams<tapa::vec_t<float, 2>, 8> input_split_fifo("input_split_fifo");
+    tapa::streams<tapa::vec_t<float, 2>, 8> centroid_fifo("centroid_fifo");
+    tapa::streams<ap_uint<8>, 8> idx_out_fifo("idx_out_fifo");
 
     tapa::task()
-        .invoke<tapa::join>(input_reader_wide, L, 8, inp, input_fifo)
+        .invoke<tapa::join>(input_reader_wide, L, 16, inp, input_fifo)
         .invoke<tapa::join>(input_splitter, L, 8, input_fifo, input_split_fifo)
-        .invoke<tapa::join>(centroid_reader_split, 8, centroid, centroid_fifo)
-        .invoke<tapa::join, 8>(ccu_fp32, L, 8, input_split_fifo, centroid_fifo, idx_out_fifo)
+        .invoke<tapa::join>(centroid_reader_split, 16, centroid, centroid_fifo)
+        .invoke<tapa::join, 8>(treeccu_fp32, L, 16, input_split_fifo, centroid_fifo, idx_out_fifo)
         .invoke<tapa::join, 8>(idx_out_writer, L, 8, idx_out_fifo, idx_out);
 
 }
