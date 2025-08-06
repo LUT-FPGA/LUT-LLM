@@ -44,14 +44,14 @@ void reference_softmax(const std::vector<std::vector<float>>& qk_scores,
 
 // Reference implementation for Grouped Query Attention
 void reference_gqa(
-    const std::vector<std::vector<std::vector<float>>>& k_matrices,  // [2][seq_len][head_dim]
-    const std::vector<std::vector<std::vector<float>>>& v_matrices,  // [2][seq_len][head_dim]
-    const std::vector<std::vector<std::vector<float>>>& q_matrices,  // [14][seq_len][head_dim]
-    std::vector<std::vector<std::vector<float>>>& output,           // [14][seq_len][head_dim]
+    const std::vector<std::vector<std::vector<float>>>& k_matrices,  // [8][seq_len][head_dim]
+    const std::vector<std::vector<std::vector<float>>>& v_matrices,  // [8][seq_len][head_dim]
+    const std::vector<std::vector<std::vector<float>>>& q_matrices,  // [16][seq_len][head_dim]
+    std::vector<std::vector<std::vector<float>>>& output,           // [16][seq_len][head_dim]
     int seq_len
 ) {
-    const int num_groups = 2;
-    const int heads_per_group = 7;
+    const int num_groups = NUM_GROUPS;
+    const int heads_per_group = HEAD_PER_GROUP;
     const int head_dim = HEAD_DIM;
     
     // Process each group
@@ -99,14 +99,14 @@ void reference_gqa(
 int main(int argc, char* argv[]) {
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     
-    // Test parameters - start with smaller size for debugging
+    // Test parameters - updated for Qwen 3 1.7B dimensions
     const int L = 32;  // Sequence length (must be multiple of 16)
-    const int num_groups = 2;
-    const int heads_per_group = 7;
-    const int total_heads = 14;
-    const int head_dim = HEAD_DIM;  // 64
-    const int hidden_dim = HIDDEN_DIM;  // 896
-    const int qkv_dim = QKV_DIM;  // 896 + 64 * 4 = 1152
+    const int num_groups = NUM_GROUPS;  // 8
+    const int heads_per_group = HEAD_PER_GROUP;  // 2
+    const int total_heads = num_groups * heads_per_group;  // 16
+    const int head_dim = HEAD_DIM;  // 128
+    const int hidden_dim = HIDDEN_DIM;  // 2048
+    const int qkv_dim = QKV_DIM;  // 4096
     
     std::cout << "Testing GQA kernel with:" << std::endl;
     std::cout << "  Sequence length (L): " << L << std::endl;
@@ -156,54 +156,55 @@ int main(int argc, char* argv[]) {
     std::cout << "Generated random K, V, Q matrices" << std::endl;
     
     // Pack input data according to the format expected by the hardware
-    // Looking at input_reader, it reads (L * QKV_DIM) >> 4 vec_t<float, 16> elements
-    // This equals (L * 1152) / 16 = 72L vectors for L sequence length
+    // Based on gqa_arbiter comment, the order is:
+    // v[0], k[0], q[0:1], v[1], k[1], q[2:3], ..., v[7], k[7], q[14:15]
+    // Each block is L * HEAD_DIM / 16 vectors
     
-    // Based on the gemm_gqa function, the data is read in the following order:
-    // For each group: K matrix (by columns), V matrix (by rows), then Q matrices for that group
-    
-    int total_input_vectors = (L * qkv_dim) / 16;  // Corrected: >> 4 means divide by 16
+    int total_input_vectors = (L * qkv_dim) / 16;
     std::vector<tapa::vec_t<float, 16>> input_hw(total_input_vectors);
     
     std::cout << "Packing input data (total vectors: " << total_input_vectors << ")..." << std::endl;
     
     int vec_idx = 0;
+    int vectors_per_matrix = (L * head_dim) / 16;  // Each matrix occupies this many vectors
     
-    // Pack data for both groups
+    // Pack data according to the arbiter order: v[g], k[g], q[g*2], q[g*2+1] for each group g
     for (int g = 0; g < num_groups; g++) {
-        // Pack V matrix - the hardware reads it row by row
-        // load_v: for (int i = 0; i < L; i++) for (int j = 0; j < (HEAD_DIM >> 4); j++)
-        for (int row = 0; row < L; row++) {
-            for (int col_chunk = 0; col_chunk < (head_dim / 16); col_chunk++) {
+        // Pack V matrix for group g
+        // Hardware loads: for (int i = 0; i < (HEAD_DIM >> 4); i++) for (int j = 0; j < L; j++)
+        // This means: head_dim chunks first, then sequence length
+        for (int head_chunk = 0; head_chunk < (head_dim / 16); head_chunk++) {
+            for (int seq_pos = 0; seq_pos < L; seq_pos++) {
                 for (int elem = 0; elem < 16; elem++) {
-                    int col = col_chunk * 16 + elem;
-                    input_hw[vec_idx][elem] = v_matrices[g][row][col];
+                    int head_idx = head_chunk * 16 + elem;
+                    input_hw[vec_idx][elem] = v_matrices[g][seq_pos][head_idx];
                 }
                 vec_idx++;
             }
         }
         
-        // Pack K matrix - the hardware reads it column by column
-        // load_k: for (int i = 0; i < HEAD_DIM; i++) for (int j = 0; j < (L >> 4); j++)
-        for (int col = 0; col < head_dim; col++) {
-            for (int row_chunk = 0; row_chunk < (L / 16); row_chunk++) {
+        // Pack K matrix for group g  
+        // Same loading pattern as V
+        for (int head_chunk = 0; head_chunk < (head_dim / 16); head_chunk++) {
+            for (int seq_pos = 0; seq_pos < L; seq_pos++) {
                 for (int elem = 0; elem < 16; elem++) {
-                    int row = row_chunk * 16 + elem;
-                    input_hw[vec_idx][elem] = k_matrices[g][row][col];
+                    int head_idx = head_chunk * 16 + elem;
+                    input_hw[vec_idx][elem] = k_matrices[g][seq_pos][head_idx];
                 }
                 vec_idx++;
             }
         }
         
-        // Pack Q matrices for this group (7 matrices)
-        // The Q matrices are read during the QK computation
+        // Pack Q matrices for this group (2 heads: g*2 and g*2+1)
         for (int h = 0; h < heads_per_group; h++) {
             int head_idx = g * heads_per_group + h;
-            for (int col = 0; col < head_dim; col++) {
-                for (int row_chunk = 0; row_chunk < (L / 16); row_chunk++) {
+            
+            // Q is read during computation by head dimension chunks first, then sequence length
+            for (int seq_pos = 0; seq_pos < L; seq_pos++) {
+                for (int head_chunk = 0; head_chunk < (head_dim / 16); head_chunk++) {
                     for (int elem = 0; elem < 16; elem++) {
-                        int row = row_chunk * 16 + elem;
-                        input_hw[vec_idx][elem] = q_matrices[head_idx][row][col];
+                        int head_pos = head_chunk * 16 + elem;
+                        input_hw[vec_idx][elem] = q_matrices[head_idx][seq_pos][head_pos];
                     }
                     vec_idx++;
                 }
@@ -254,28 +255,22 @@ int main(int argc, char* argv[]) {
                                                            std::vector<std::vector<float>>(L, std::vector<float>(head_dim)));
     
     // The hardware outputs results grouped by attention heads
-    // Based on the write pattern in gemm_gqa, output is organized as:
-    // For each group, for each head in group, for each 16-row batch, for each dimension chunk
+    // Output is organized as: for each group, for each head in group, for each sequence position, for each head dimension chunk
     int hw_vec_idx = 0;
     
     for (int g = 0; g < num_groups; g++) {
         for (int h = 0; h < heads_per_group; h++) {
             int head_idx = g * heads_per_group + h;
             
-            // Process in 16-row batches
-            for (int row_batch = 0; row_batch < (L / 16); row_batch++) {
-                // For each row in the batch
-                for (int row_in_batch = 0; row_in_batch < 16; row_in_batch++) {
-                    int seq_pos = row_batch * 16 + row_in_batch;
-                    
-                    // Process dimension in chunks of 16
-                    for (int dim_chunk = 0; dim_chunk < (head_dim / 16); dim_chunk++) {
-                        for (int elem = 0; elem < 16; elem++) {
-                            int dim = dim_chunk * 16 + elem;
-                            output_hw[head_idx][seq_pos][dim] = output_hw_raw[hw_vec_idx][elem];
-                        }
-                        hw_vec_idx++;
+            // Process sequence positions and head dimensions
+            // Based on gemm_gqa_av output pattern: for (int i = 0; i < L; i++) for (int j = 0; j < (HEAD_DIM >> 4); j++)
+            for (int seq_pos = 0; seq_pos < L; seq_pos++) {
+                for (int head_chunk = 0; head_chunk < (head_dim / 16); head_chunk++) {
+                    for (int elem = 0; elem < 16; elem++) {
+                        int head_pos = head_chunk * 16 + elem;
+                        output_hw[head_idx][seq_pos][head_pos] = output_hw_raw[hw_vec_idx][elem];
                     }
+                    hw_vec_idx++;
                 }
             }
         }
@@ -351,11 +346,12 @@ int main(int argc, char* argv[]) {
     }
     
     // Show sample attention weights after softmax
-    std::vector<std::vector<float>> sample_qk_scores(4, std::vector<float>(8, 0.0f));
-    std::vector<std::vector<float>> sample_attn_weights(4, std::vector<float>(8, 0.0f));
+    int sample_size = std::min(4, L);
+    std::vector<std::vector<float>> sample_qk_scores(4, std::vector<float>(sample_size, 0.0f));
+    std::vector<std::vector<float>> sample_attn_weights(4, std::vector<float>(sample_size, 0.0f));
     
     for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 8; j++) {
+        for (int j = 0; j < sample_size; j++) {
             for (int d = 0; d < head_dim; d++) {
                 sample_qk_scores[i][j] += q[i][d] * k[j][d];
             }
@@ -368,7 +364,7 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < 4; i++) {
         std::cout << "Query " << i << ": ";
         float sum = 0.0f;
-        for (int j = 0; j < std::min(8, L); j++) {
+        for (int j = 0; j < sample_size; j++) {
             if (i >= j) {
                 std::cout << std::setw(8) << std::setprecision(4) << sample_attn_weights[i][j] << " ";
                 sum += sample_attn_weights[i][j];

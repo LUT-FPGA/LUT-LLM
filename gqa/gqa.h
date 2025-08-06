@@ -196,7 +196,7 @@ void gemm_gqa_qk(
                     }
 
                     // reduction
-                    reduction: for (int k = 0; k < 8; k++) {
+                    reduction: for (int k = 1; k < 8; k++) {
                         #pragma HLS pipeline II=1
                         for (int kk = 0; kk < 2; kk++){
                             #pragma HLS unroll
@@ -250,9 +250,6 @@ void gemm_gqa_av(
             }
         }
 
-        LOG(INFO) << "finish read v";
-
-
         for (int r = 0; r < HEAD_PER_GROUP; r++) {
 
             // step 3: write batch of rows for softmax and compute AV
@@ -301,14 +298,14 @@ void gemm_gqa_av(
                             #pragma HLS unroll
                             for(int kk = 0; kk < 16; kk++) {
                                 #pragma HLS unroll
-                                av_reg_row[jj][kk] += qk_vec[kk] * v_buf[j*16+jj][k*16+kk];
+                                av_reg_row[jj][kk] += qk_vec[kk] * v_buf[k*16+kk][j*16+jj];
                             }
                         }
 
                     }
 
                     // reduction
-                    reduction: for (int k = 0; k < 8; k++) {
+                    reduction: for (int k = 1; k < 8; k++) {
                         #pragma HLS pipeline II=1
                         for (int kk = 0; kk < 2; kk++){
                             #pragma HLS unroll
