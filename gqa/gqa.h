@@ -150,7 +150,7 @@ void gemm_gqa_qk(
                 #pragma HLS array_partition variable=q_buf_row cyclic factor=16
                 
                 for (int j = 0; j < (L >> 4); j++) {
-                    #pragma HLS dataflow
+                    #pragma HLS loop_tripcount min=32 max=128
 
                     float qk_reg_row[16][16];
                     #pragma HLS array_partition variable=qk_reg_row complete dim=1
@@ -166,6 +166,7 @@ void gemm_gqa_qk(
 
                     compute_macc: for (int k = 0; k < (HEAD_DIM >> 4); k++) {
                         #pragma HLS pipeline II=1
+                        #pragma HLS loop_tripcount min=8 max=8
                         
                         tapa::vec_t<float, 16> q_vec;
 
@@ -260,6 +261,7 @@ void gemm_gqa_av(
 
                 for (int j = 0; j < (HEAD_DIM >> 4); j++) {
                     #pragma HLS dataflow
+                    #pragma HLS loop_tripcount min=8 max=8
 
                     float av_reg_row[16][16];
                     #pragma HLS array_partition variable=av_reg_row complete dim=1
@@ -275,6 +277,7 @@ void gemm_gqa_av(
 
                     compute_macc: for (int k = 0; k < (L >> 4); k++) {
                         #pragma HLS pipeline II=1
+                        #pragma HLS loop_tripcount min=2 max=8
                         
                         tapa::vec_t<float, 16> qk_vec;
 
@@ -340,6 +343,7 @@ void softmax(
         for (int r = 0; r < HEAD_PER_GROUP; r++) {
             for (int i = 0; i < L; i++) {
                 #pragma HLS dataflow
+                #pragma HLS loop_tripcount min=32 max=128
 
                 float softmax_buf[MAX_SEQ_LEN];
                 #pragma HLS array_partition variable=softmax_buf cyclic factor=16 dim=1
@@ -382,8 +386,9 @@ void softmax(
 
                 sum = 1.0 / sum; // compute the inverse of the sum
 
-                for (int j = 0; j < (L>>4); j++) {
+                send_exp: for (int j = 0; j < (L>>4); j++) {
                     #pragma HLS pipeline II=1
+                    #pragma HLS loop_tripcount min=2 max=8
                     tapa::vec_t<float, 16> post_softmax_vec;
                     for (int k = 0; k < 16; k++) {
                         #pragma HLS unroll
