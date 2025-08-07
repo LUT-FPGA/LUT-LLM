@@ -128,13 +128,13 @@ void gemm_gqa_qk(
 
         // 16 x 16 x 16 pe array, reconfigurable to parallel group, same size
         
-        load_kv: for (int i = 0; i < (HEAD_DIM >> 4); i++) {
-            for (int j = 0; j < L; j++) {
+        load_kv: for (int i = 0; i < L; i++) {
+            for (int j = 0; j < (HEAD_DIM >> 4); j++) {
                 #pragma HLS pipeline II=1
                 tapa::vec_t<float, 16> tmp = input_fifo.read(); 
                 for (int k = 0; k < 16; k++) {
                     #pragma HLS unroll
-                    k_buf[j][i*16+k] = tmp[k];
+                    k_buf[i][j*16+k] = tmp[k];
                 }
             }
         }
@@ -240,13 +240,13 @@ void gemm_gqa_av(
 
         // 16 x 16 x 16 pe array, reconfigurable to parallel group, same size
         
-        load_kv: for (int i = 0; i < (HEAD_DIM >> 4); i++) {
-            for (int j = 0; j < L; j++) {
+        load_kv: for (int i = 0; i < L; i++) {
+            for (int j = 0; j < (HEAD_DIM >> 4); j++) {
                 #pragma HLS pipeline II=1
                 tapa::vec_t<float, 16> tmp = input_fifo.read(); 
                 for (int k = 0; k < 16; k++) {
                     #pragma HLS unroll
-                    v_buf[j][i*16+k] = tmp[k];
+                    v_buf[i][j*16+k] = tmp[k];
                 }
             }
         }

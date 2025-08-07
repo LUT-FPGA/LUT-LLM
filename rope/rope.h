@@ -86,14 +86,16 @@ void apply_rotary_pos_emb(
         }
     }
 
-    //read input and apply embeddings
-    float input_buf_sin[HEAD_DIM];
-    #pragma HLS array_partition variable=input_buf_sin cyclic factor=16
-    float input_buf_cos[HEAD_DIM];
-    #pragma HLS array_partition variable=input_buf_cos cyclic factor=16
-
     for(int r = 0; r < iter; r++) {
         for (int i = 0; i < L; i++){
+            #pragma HLS dataflow
+            #pragma HLS loop_tripcount min=32 max=128
+             //read input and apply embeddings
+            float input_buf_sin[HEAD_DIM];
+            #pragma HLS array_partition variable=input_buf_sin cyclic factor=16
+            float input_buf_cos[HEAD_DIM];
+            #pragma HLS array_partition variable=input_buf_cos cyclic factor=16
+
             for(int j = 0; j < (HEAD_DIM >> 4); j++){
                 #pragma HLS pipeline II=1
                 auto input_vec = input_fifo.read();

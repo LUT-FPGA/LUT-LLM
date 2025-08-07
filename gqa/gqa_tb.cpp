@@ -173,8 +173,8 @@ int main(int argc, char* argv[]) {
         // Pack V matrix for group g
         // Hardware loads: for (int i = 0; i < (HEAD_DIM >> 4); i++) for (int j = 0; j < L; j++)
         // This means: head_dim chunks first, then sequence length
-        for (int head_chunk = 0; head_chunk < (head_dim / 16); head_chunk++) {
-            for (int seq_pos = 0; seq_pos < L; seq_pos++) {
+        for (int seq_pos = 0; seq_pos < L; seq_pos++) {
+            for (int head_chunk = 0; head_chunk < (head_dim / 16); head_chunk++) {
                 for (int elem = 0; elem < 16; elem++) {
                     int head_idx = head_chunk * 16 + elem;
                     input_hw[vec_idx][elem] = v_matrices[g][seq_pos][head_idx];
@@ -185,8 +185,8 @@ int main(int argc, char* argv[]) {
         
         // Pack K matrix for group g  
         // Same loading pattern as V
-        for (int head_chunk = 0; head_chunk < (head_dim / 16); head_chunk++) {
-            for (int seq_pos = 0; seq_pos < L; seq_pos++) {
+        for (int seq_pos = 0; seq_pos < L; seq_pos++) {
+            for (int head_chunk = 0; head_chunk < (head_dim / 16); head_chunk++) {
                 for (int elem = 0; elem < 16; elem++) {
                     int head_idx = head_chunk * 16 + elem;
                     input_hw[vec_idx][elem] = k_matrices[g][seq_pos][head_idx];
