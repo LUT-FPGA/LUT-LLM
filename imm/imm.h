@@ -38,14 +38,14 @@ void index_reader(
 	}
 }
 
+template<int read_len = 3>
 void scale_zero_reader(
-    const int scale_zero_size,
     tapa::async_mmap<ap_uint<64>>& scale_zero_buffer,
     tapa::ostream<ap_uint<64>>& scale_zero_fifo
 ) {
-    for(int i_req = 0, i_resp = 0; i_resp < scale_zero_size;){
+    for(int i_req = 0, i_resp = 0; i_resp < (read_len);){
         #pragma HLS pipeline II=1
-        if((i_req < scale_zero_size) & !scale_zero_buffer.read_addr.full()){
+        if((i_req < (read_len)) & !scale_zero_buffer.read_addr.full()){
             scale_zero_buffer.read_addr.try_write(i_req);
             ++i_req;
         }
@@ -227,6 +227,7 @@ void memory_matcher(
     }
 }
 
+template <int in_bound_0 = HIDDEN_DIM_DIV_2, int in_bound_1 = INTERM_DIM_DIV_2, int out_bound_0 = INTERM_DIM_MUL_2, int out_bound_1 = HIDDEN_DIM>
 void memory_matcher_w_vq(
     const int L,
     tapa::istream<idx_t>& idx_fifo,
@@ -236,8 +237,8 @@ void memory_matcher_w_vq(
 ) {
     for (int round = 0; round < 2; round++){
     // read indices and parallel match
-        const int in_size = (round == 0) ? HIDDEN_DIM_DIV_2 : INTERM_DIM_DIV_2;
-        const int out_size = (round == 0) ? INTERM_DIM_MUL_2 : HIDDEN_DIM;
+        const int in_size = (round == 0) ? in_bound_0 : in_bound_1;
+        const int out_size = (round == 0) ? out_bound_0 : out_bound_1;
         for (int r = 0; r < (in_size >> 4); r++) {
             // #pragma HLS dataflow
             #pragma HLS loop_tripcount min=128 max=384
@@ -357,6 +358,7 @@ void mm_data_read_func(
     }
 }
 
+template <int in_bound_0 = HIDDEN_DIM_DIV_2, int in_bound_1 = INTERM_DIM_DIV_2, int out_bound_0 = INTERM_DIM_MUL_2, int out_bound_1 = HIDDEN_DIM>
 void memory_matcher_w_vq_half(
     const int L,
     tapa::istream<idx_t>& idx_fifo,
@@ -366,8 +368,8 @@ void memory_matcher_w_vq_half(
 ) {
     for (int round = 0; round < 2; round++){
     // read indices and parallel match
-        const int in_size = (round == 0) ? HIDDEN_DIM_DIV_2 : INTERM_DIM_DIV_2;
-        const int out_size = (round == 0) ? INTERM_DIM_MUL_2 : HIDDEN_DIM;
+        const int in_size = (round == 0) ? in_bound_0 : in_bound_1;
+        const int out_size = (round == 0) ? out_bound_0 : out_bound_1;
         for (int r = 0; r < (in_size >> 4); r++) {
             #pragma HLS dataflow
             #pragma HLS loop_tripcount min=128 max=384
@@ -451,6 +453,7 @@ void memory_matcher_w_vq_half(
     }
 }
 
+template <int in_bound_0 = HIDDEN_DIM_DIV_2, int in_bound_1 = INTERM_DIM_DIV_2, int out_bound_0 = INTERM_DIM_MUL_2, int out_bound_1 = HIDDEN_DIM>
 void memory_matcher_w_vq_dsp(
     const int L,
     tapa::istream<idx_t>& idx_fifo,
@@ -460,8 +463,8 @@ void memory_matcher_w_vq_dsp(
 ) {
     for (int round = 0; round < 2; round++){
     // read indices and parallel match
-        const int in_size = (round == 0) ? HIDDEN_DIM_DIV_2 : INTERM_DIM_DIV_2;
-        const int out_size = (round == 0) ? INTERM_DIM_MUL_2 : HIDDEN_DIM;
+        const int in_size = (round == 0) ? in_bound_0 : in_bound_1;
+        const int out_size = (round == 0) ? out_bound_0 : out_bound_1;
         for (int r = 0; r < (in_size >> 4); r++) {
             // #pragma HLS dataflow
             #pragma HLS loop_tripcount min=128 max=384
@@ -548,6 +551,7 @@ void memory_matcher_w_vq_dsp(
     }
 }
 
+template <int in_bound_0 = HIDDEN_DIM_DIV_2, int in_bound_1 = INTERM_DIM_DIV_2, int out_bound_0 = INTERM_DIM_MUL_2, int out_bound_1 = HIDDEN_DIM>
 void memory_matcher_w_vq_half_dsp(
     const int L,
     tapa::istream<idx_t>& idx_fifo,
@@ -557,8 +561,8 @@ void memory_matcher_w_vq_half_dsp(
 ) {
     for (int round = 0; round < 2; round++){
     // read indices and parallel match
-        const int in_size = (round == 0) ? HIDDEN_DIM_DIV_2 : INTERM_DIM_DIV_2;
-        const int out_size = (round == 0) ? INTERM_DIM_MUL_2 : HIDDEN_DIM;
+        const int in_size = (round == 0) ? in_bound_0 : in_bound_1;
+        const int out_size = (round == 0) ? out_bound_0 : out_bound_1;
         for (int r = 0; r < (in_size >> 4); r++) {
             #pragma HLS dataflow
             #pragma HLS loop_tripcount min=128 max=384
@@ -643,6 +647,7 @@ void memory_matcher_w_vq_half_dsp(
     }
 }
 
+template <int in_bound_0 = HIDDEN_DIM_DIV_2, int in_bound_1 = INTERM_DIM_DIV_2, int out_bound_0 = INTERM_DIM_MUL_2, int out_bound_1 = HIDDEN_DIM>
 void memory_matcher_w_vq_head(
     const int L,
     tapa::istream<idx_t>& idx_fifo,
@@ -651,8 +656,8 @@ void memory_matcher_w_vq_head(
 ) {
     for (int round = 0; round < 2; round++) {
         // read indices and parallel match
-        const int in_size = (round == 0) ? HIDDEN_DIM_DIV_2 : INTERM_DIM_DIV_2;
-        const int out_size = (round == 0) ? INTERM_DIM_MUL_2 : HIDDEN_DIM;
+        const int in_size = (round == 0) ? in_bound_0 : in_bound_1;
+        const int out_size = (round == 0) ? out_bound_0 : out_bound_1;
         for (int r = 0; r < (in_size >> 4); r++) {
             //#pragma HLS dataflow
             #pragma HLS loop_tripcount min=128 max=384
@@ -732,6 +737,7 @@ void memory_matcher_w_vq_head(
     }
 }
 
+template <int in_bound_0 = HIDDEN_DIM_DIV_2, int in_bound_1 = INTERM_DIM_DIV_2, int out_bound_0 = INTERM_DIM_MUL_2, int out_bound_1 = HIDDEN_DIM>
 void memory_matcher_w_vq_head_half(
     const int L,
     tapa::istream<idx_t>& idx_fifo,
@@ -740,8 +746,8 @@ void memory_matcher_w_vq_head_half(
 ) {
     for (int round = 0; round < 2; round++) {
         // read indices and parallel match
-        const int in_size = (round == 0) ? HIDDEN_DIM_DIV_2 : INTERM_DIM_DIV_2;
-        const int out_size = (round == 0) ? INTERM_DIM_MUL_2 : HIDDEN_DIM;
+        const int in_size = (round == 0) ? in_bound_0 : in_bound_1;
+        const int out_size = (round == 0) ? out_bound_0 : out_bound_1;
         for (int r = 0; r < (in_size >> 4); r++) {
             #pragma HLS dataflow
             #pragma HLS loop_tripcount min=128 max=384
@@ -1092,46 +1098,46 @@ void measure_cycle(tapa::istream<bool>& fifo_fin, tapa::mmap<int> cycle_count){
 
 //there are some problems with tapa fast cosim in axi interface modeling using ap_uint
 //top function for testing
-void imm(
-    const int L,
-    const int in_size,
-    const int out_size,
-    const int total_size,
-    tapa::mmaps<int, 8> idx_buffer,
-    tapa::mmaps<tapa::vec_t<ap_uint<8>, 64>, 8> lut_weight_idx_buffer,
-    tapa::mmap<tapa::vec_t<float, 16>> linear_out_buffer,
-    tapa::mmap<ap_uint<64>> scale_zero_buffer,
-    tapa::mmap<int> cycle_count
-) {
-    tapa::streams<idx_t, 8> idx_fifo("idx_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<8>, 64>, 8> lut_weight_idx_fifo("lut_weight_idx_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 8> psum_0_fifo("psum_0_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 8> psum_1_fifo("psum_1_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 8> psum_2_fifo("psum_2_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 8> psum_3_fifo("psum_3_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 8> psum_4_fifo("psum_4_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 8> psum_5_fifo("psum_5_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 8> psum_6_fifo("psum_6_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 8> psum_7_fifo("psum_7_fifo");
-    tapa::stream<ap_uint<64>> scale_zero_fifo("scale_zero_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> out_fifo("out_fifo");
-    tapa::stream<bool> fifo_fin("fifo_fin");
+// void imm(
+//     const int L,
+//     const int in_size,
+//     const int out_size,
+//     const int total_size,
+//     tapa::mmaps<int, 8> idx_buffer,
+//     tapa::mmaps<tapa::vec_t<ap_uint<8>, 64>, 8> lut_weight_idx_buffer,
+//     tapa::mmap<tapa::vec_t<float, 16>> linear_out_buffer,
+//     tapa::mmap<ap_uint<64>> scale_zero_buffer,
+//     tapa::mmap<int> cycle_count
+// ) {
+//     tapa::streams<idx_t, 8> idx_fifo("idx_fifo");
+//     tapa::streams<tapa::vec_t<ap_uint<8>, 64>, 8> lut_weight_idx_fifo("lut_weight_idx_fifo");
+//     tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 8> psum_0_fifo("psum_0_fifo");
+//     tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 8> psum_1_fifo("psum_1_fifo");
+//     tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 8> psum_2_fifo("psum_2_fifo");
+//     tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 8> psum_3_fifo("psum_3_fifo");
+//     tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 8> psum_4_fifo("psum_4_fifo");
+//     tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 8> psum_5_fifo("psum_5_fifo");
+//     tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 8> psum_6_fifo("psum_6_fifo");
+//     tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 8> psum_7_fifo("psum_7_fifo");
+//     tapa::stream<ap_uint<64>> scale_zero_fifo("scale_zero_fifo");
+//     tapa::stream<tapa::vec_t<float, 16>> out_fifo("out_fifo");
+//     tapa::stream<bool> fifo_fin("fifo_fin");
 
-    tapa::task()
-        .invoke<tapa::join, 8>(index_reader, L, in_size, idx_buffer, idx_fifo)
-        .invoke<tapa::join, 8>(lut_reader, total_size, lut_weight_idx_buffer, lut_weight_idx_fifo)
-        .invoke<tapa::join>(scale_zero_reader, 1, scale_zero_buffer, scale_zero_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq_head, L, idx_fifo, lut_weight_idx_fifo, psum_0_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_weight_idx_fifo, psum_0_fifo, psum_1_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_weight_idx_fifo, psum_1_fifo, psum_2_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_weight_idx_fifo, psum_2_fifo, psum_3_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_weight_idx_fifo, psum_3_fifo, psum_4_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_weight_idx_fifo, psum_4_fifo, psum_5_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_weight_idx_fifo, psum_5_fifo, psum_6_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq, L, idx_fifo, lut_weight_idx_fifo, psum_6_fifo, psum_7_fifo)
-        .invoke<tapa::join>(memory_matcher_tail_acc, L, in_size, out_size, psum_7_fifo, scale_zero_fifo, out_fifo)
-        .invoke<tapa::join>(linear_out_writer, L, out_size, out_fifo, linear_out_buffer, fifo_fin)
-        .invoke<tapa::join>(measure_cycle, fifo_fin, cycle_count);
-}
+//     tapa::task()
+//         .invoke<tapa::join, 8>(index_reader, L, in_size, idx_buffer, idx_fifo)
+//         .invoke<tapa::join, 8>(lut_reader, total_size, lut_weight_idx_buffer, lut_weight_idx_fifo)
+//         .invoke<tapa::join>(scale_zero_reader, scale_zero_buffer, scale_zero_fifo)
+//         .invoke<tapa::join>(memory_matcher_w_vq_head_test, L, idx_fifo, lut_weight_idx_fifo, psum_0_fifo)
+//         .invoke<tapa::join>(memory_matcher_w_vq_test, L, idx_fifo, lut_weight_idx_fifo, psum_0_fifo, psum_1_fifo)
+//         .invoke<tapa::join>(memory_matcher_w_vq_test, L, idx_fifo, lut_weight_idx_fifo, psum_1_fifo, psum_2_fifo)
+//         .invoke<tapa::join>(memory_matcher_w_vq_test, L, idx_fifo, lut_weight_idx_fifo, psum_2_fifo, psum_3_fifo)
+//         .invoke<tapa::join>(memory_matcher_w_vq_test, L, idx_fifo, lut_weight_idx_fifo, psum_3_fifo, psum_4_fifo)
+//         .invoke<tapa::join>(memory_matcher_w_vq_test, L, idx_fifo, lut_weight_idx_fifo, psum_4_fifo, psum_5_fifo)
+//         .invoke<tapa::join>(memory_matcher_w_vq_test, L, idx_fifo, lut_weight_idx_fifo, psum_5_fifo, psum_6_fifo)
+//         .invoke<tapa::join>(memory_matcher_w_vq_test, L, idx_fifo, lut_weight_idx_fifo, psum_6_fifo, psum_7_fifo)
+//         .invoke<tapa::join>(memory_matcher_tail_acc, L, in_size, out_size, psum_7_fifo, scale_zero_fifo, out_fifo)
+//         .invoke<tapa::join>(linear_out_writer, L, out_size, out_fifo, linear_out_buffer, fifo_fin)
+//         .invoke<tapa::join>(measure_cycle, fifo_fin, cycle_count);
+// }
 
 #endif

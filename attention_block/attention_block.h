@@ -208,7 +208,7 @@ void memory_matcher_acc_overlay_half(
                 float scale = tapa::bit_cast<float>(ap_uint<32>(pack_dequant[h](31, 0)));
                 float zeropoint = tapa::bit_cast<float>(ap_uint<32>(pack_dequant[h](63, 32)));
                 for(int i = 0; i < L; i++) {
-                    for(int j = 0; j < (HIDDEN_DIM >> 4); j++) {
+                    for(int j = 0; j < (HEAD_DIM >> 4); j++) {
                         #pragma HLS pipeline II=1
                         tapa::vec_t<float, 16> tmp;
                         for (int k = 0; k < 8; k++) {
@@ -274,7 +274,7 @@ void memory_matcher_w_vq_head_half_attn(
     tapa::istream<tapa::vec_t<ap_uint<8>, 64>>& lut_weight_idx_fifo,
     tapa::ostreams<tapa::vec_t<ap_uint<48>, 8>, 16>& outbound_fifo
 ) {
-    memory_matcher_w_vq_head_half<HIDDEN_DIM_DIV_2, INTERM_DIM_DIV_2, INTERM_DIM_MUL_2, HIDDEN_DIM>(
+    memory_matcher_w_vq_head_half<HIDDEN_DIM_DIV_2, HIDDEN_DIM_DIV_2, QKV_DIM, HIDDEN_DIM>(
         L, idx_fifo, lut_weight_idx_fifo, outbound_fifo
     );
 }
@@ -289,7 +289,7 @@ void scale_zero_reader_attn(
 void attn_cache(
     const int L,
     tapa::istream<tapa::vec_t<float, 16>>& attn_in_fifo,
-    tapa::ostream<tapa::vec_t<float, 16>>& attn_out_fifo
+    tapa::ostreams<tapa::vec_t<float, 16>, 2>& attn_out_fifo
 ) {
     ap_uint<64> linear_out[MAX_SEQ_LEN][HIDDEN_DIM_DIV_2];
     #pragma HLS array_partition variable=linear_out cyclic factor=16 dim=2
@@ -308,16 +308,19 @@ void attn_cache(
         }
     }
 
-    for (int i = 0; i < (HIDDEN_DIM >> 4); i++) {
+    for (int i = 0; i < (HIDDEN_DIM >> 5); i++) {
         for (int j = 0; j < L; j++){
             #pragma HLS pipeline II=1
-            tapa::vec_t<float, 16> tmp;
-            for (int k = 0; k < 8; k++) {
+            for (int c = 0; c < 2; c++) {
                 #pragma HLS unroll
-                tmp[k*2] = tapa::bit_cast<float>(ap_uint<32>(linear_out[j][i * 8 + k](31, 0)));
-                tmp[k*2 + 1] = tapa::bit_cast<float>(ap_uint<32>(linear_out[j][i * 8 + k](63, 32)));
+                tapa::vec_t<float, 16> tmp;
+                for (int k = 0; k < 8; k++) {
+                    #pragma HLS unroll
+                    tmp[k*2] = tapa::bit_cast<float>(ap_uint<32>(linear_out[j][i * 16 + c * 8 + k](31, 0)));
+                    tmp[k*2 + 1] = tapa::bit_cast<float>(ap_uint<32>(linear_out[j][i * 16 + c * 8 + k](63, 32)));
+                }
+                attn_out_fifo[c].write(tmp);
             }
-            attn_out_fifo.write(tmp);
         }
     }
 }
@@ -365,7 +368,7 @@ void attention_block(
     tapa::stream<tapa::vec_t<float, 16>> input_fifo_qk("input_fifo_qk");
     tapa::stream<tapa::vec_t<float, 16>> input_fifo_av("input_fifo_av");
     tapa::stream<tapa::vec_t<float, 16>> attn_cache_fifo("attn_cache_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> attn_out_fifo("attn_out_fifo");
+    tapa::streams<tapa::vec_t<float, 16>, 2> attn_out_fifo("attn_out_fifo");
     tapa::stream<tapa::vec_t<float, 16>> pre_softmax_fifo("pre_softmax_fifo");
     tapa::stream<tapa::vec_t<float, 16>> post_softmax_fifo("post_softmax_fifo");
 
@@ -380,22 +383,22 @@ void attention_block(
         .invoke<tapa::join, 2>(input_splitter_attn, L, input_fifo, attn_out_fifo, input_split_fifo)
         .invoke<tapa::join, 2>(centroid_reader_split, ATTN_CENTROID_SIZE, centroid_buffer, centroid_fifo)
         .invoke<tapa::join, 16>(treeccu_fp32, L, ATTN_CENTROID_SIZE, input_split_fifo, centroid_fifo, idx_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq_head_half, L, idx_fifo, lut_weight_idx_fifo, psum_0_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq_half_dsp, L, idx_fifo, lut_weight_idx_fifo, psum_0_fifo, psum_1_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq_half, L, idx_fifo, lut_weight_idx_fifo, psum_1_fifo, psum_2_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq_half_dsp, L, idx_fifo, lut_weight_idx_fifo, psum_2_fifo, psum_3_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq_half, L, idx_fifo, lut_weight_idx_fifo, psum_3_fifo, psum_4_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq_half_dsp, L, idx_fifo, lut_weight_idx_fifo, psum_4_fifo, psum_5_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq_half, L, idx_fifo, lut_weight_idx_fifo, psum_5_fifo, psum_6_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq_half_dsp, L, idx_fifo, lut_weight_idx_fifo, psum_6_fifo, psum_7_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq_half, L, idx_fifo, lut_weight_idx_fifo, psum_7_fifo, psum_8_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq_half_dsp, L, idx_fifo, lut_weight_idx_fifo, psum_8_fifo, psum_9_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq_half, L, idx_fifo, lut_weight_idx_fifo, psum_9_fifo, psum_10_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq_half_dsp, L, idx_fifo, lut_weight_idx_fifo, psum_10_fifo, psum_11_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq_half, L, idx_fifo, lut_weight_idx_fifo, psum_11_fifo, psum_12_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq_half_dsp, L, idx_fifo, lut_weight_idx_fifo, psum_12_fifo, psum_13_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq_half, L, idx_fifo, lut_weight_idx_fifo, psum_13_fifo, psum_14_fifo)
-        .invoke<tapa::join>(memory_matcher_w_vq_half_dsp, L, idx_fifo, lut_weight_idx_fifo, psum_14_fifo, psum_15_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq_head_half_attn, L, idx_fifo, lut_weight_idx_fifo, psum_0_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq_half_dsp_attn, L, idx_fifo, lut_weight_idx_fifo, psum_0_fifo, psum_1_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq_half_attn, L, idx_fifo, lut_weight_idx_fifo, psum_1_fifo, psum_2_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq_half_dsp_attn, L, idx_fifo, lut_weight_idx_fifo, psum_2_fifo, psum_3_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq_half_attn, L, idx_fifo, lut_weight_idx_fifo, psum_3_fifo, psum_4_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq_half_dsp_attn, L, idx_fifo, lut_weight_idx_fifo, psum_4_fifo, psum_5_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq_half_attn, L, idx_fifo, lut_weight_idx_fifo, psum_5_fifo, psum_6_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq_half_dsp_attn, L, idx_fifo, lut_weight_idx_fifo, psum_6_fifo, psum_7_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq_half_attn, L, idx_fifo, lut_weight_idx_fifo, psum_7_fifo, psum_8_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq_half_dsp_attn, L, idx_fifo, lut_weight_idx_fifo, psum_8_fifo, psum_9_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq_half_attn, L, idx_fifo, lut_weight_idx_fifo, psum_9_fifo, psum_10_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq_half_dsp_attn, L, idx_fifo, lut_weight_idx_fifo, psum_10_fifo, psum_11_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq_half_attn, L, idx_fifo, lut_weight_idx_fifo, psum_11_fifo, psum_12_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq_half_dsp_attn, L, idx_fifo, lut_weight_idx_fifo, psum_12_fifo, psum_13_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq_half_attn, L, idx_fifo, lut_weight_idx_fifo, psum_13_fifo, psum_14_fifo)
+        .invoke<tapa::join>(memory_matcher_w_vq_half_dsp_attn, L, idx_fifo, lut_weight_idx_fifo, psum_14_fifo, psum_15_fifo)
         .invoke<tapa::join>(memory_matcher_acc_overlay_half, L, psum_15_fifo, scale_zero_fifo, rope_in_fifo, input_fifo_av, out_fifo)
         .invoke<tapa::join>(apply_rope, L, rope_in_fifo, sin_fifo, cos_fifo, input_fifo_qk)
         .invoke<tapa::join>(gemm_gqa_qk, L, input_fifo_qk, pre_softmax_fifo)

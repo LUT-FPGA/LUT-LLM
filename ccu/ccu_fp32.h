@@ -178,6 +178,34 @@ void input_splitter_ffn(
     }
 }
 
+void input_splitter_attn(
+    const int L,
+    tapa::istream<tapa::vec_t<float, 16>>& input_fifo,
+    tapa::istream<tapa::vec_t<float, 16>>& attn_fifo,
+    tapa::ostreams<tapa::vec_t<float, 2>, 8>& output_fifo
+) {
+    for (int round = 0; round < 2; round++) {
+        for(int i = 0; i < (L * HIDDEN_DIM_DIV_2 >> 4); i++){
+            #pragma HLS pipeline II=1
+            tapa::vec_t<float, 16> input_vec;
+            if(round == 0) {
+                input_vec = input_fifo.read();
+            } else {
+                input_vec = attn_fifo.read();
+            }
+            for (int j = 0; j < 8; j++) {
+                #pragma HLS unroll
+                tapa::vec_t<float, 2> tmp;
+                for (int k = 0; k < 2; k++) {
+                    #pragma HLS unroll
+                    tmp[k] = input_vec[j * 2 + k];
+                }
+                output_fifo[j].write(tmp);
+            }
+        }
+    }
+}
+
 void ccu_fp32(
     const int L, // sequence length
     const int in_size, // number of 2-element positions
