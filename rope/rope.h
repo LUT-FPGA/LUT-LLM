@@ -88,7 +88,7 @@ void apply_rotary_pos_emb(
 
     for(int r = 0; r < iter; r++) {
         for (int i = 0; i < L; i++){
-            #pragma HLS dataflow
+            // #pragma HLS dataflow
             #pragma HLS loop_tripcount min=32 max=128
              //read input and apply embeddings
             float input_buf_sin[HEAD_DIM];

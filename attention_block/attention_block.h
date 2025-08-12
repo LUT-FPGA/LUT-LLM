@@ -216,7 +216,7 @@ void memory_matcher_acc_overlay_half(
                             tmp[k*2] = (float) (ap_uint<22>(linear_out[i][h*HEAD_DIM_DIV_2 + j * 8 + k](21, 0)).to_int()) * scale - zeropoint;
                             tmp[k*2 + 1] = (float) (ap_uint<22>(linear_out[i][h*HEAD_DIM_DIV_2 + j * 8 + k](43, 22)).to_int()) * scale - zeropoint;
                         }
-                        if (h % (HEAD_PER_GROUP + 2) == 0) {
+                        if ((h % (HEAD_PER_GROUP + 2)) == 0) {
                             v_fifo.write(tmp);
                         } else {
                             rope_fifo.write(tmp);
@@ -365,7 +365,7 @@ void attention_block(
     tapa::stream<tapa::vec_t<float, 16>> sin_fifo("sin_fifo");
     tapa::stream<tapa::vec_t<float, 16>> cos_fifo("cos_fifo");
     tapa::stream<tapa::vec_t<float, 16>> rope_in_fifo("rope_in_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> input_fifo_qk("input_fifo_qk");
+    tapa::stream<tapa::vec_t<float, 16>, 8> input_fifo_qk("input_fifo_qk");
     tapa::stream<tapa::vec_t<float, 16>> input_fifo_av("input_fifo_av");
     tapa::stream<tapa::vec_t<float, 16>> attn_cache_fifo("attn_cache_fifo");
     tapa::streams<tapa::vec_t<float, 16>, 2> attn_out_fifo("attn_out_fifo");
