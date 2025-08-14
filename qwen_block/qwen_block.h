@@ -112,8 +112,6 @@ void memory_matcher_acc_overlay_half(
         // read indices and parallel match
         for (int r = 0; r < r_bound; r++) {
 
-            LOG(INFO) << "Round: " << round << ", Row: " << r;
-
             for (int i = 0; i < L; i++) {
 
                 for (int j = 0; j < j_bound; j++) {
