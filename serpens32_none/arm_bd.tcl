@@ -37,11 +37,10 @@ set CIPS_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:versal_cips:3.4 CIPS_0 
 
 
 # Set CIPS properties
-set_property -dict [list CONFIG.CLOCK_MODE {Custom} CONFIG.DDR_MEMORY_MODE {Custom} CONFIG.PS_BOARD_INTERFACE {Custom} CONFIG.PS_PL_CONNECTIVITY_MODE {Custom} CONFIG.PS_PMC_CONFIG {     BOOT_MODE {Custom}     CLOCK_MODE {Custom}     DESIGN_MODE {1}     DEVICE_INTEGRITY_MODE {Sysmon temperature voltage and external IO monitoring}     PMC_CRP_PL0_REF_CTRL_FREQMHZ {99.999992}     PMC_GPIO0_MIO_PERIPHERAL {{ENABLE 1} {IO {PMC_MIO 0 .. 25}}}     PMC_GPIO1_MIO_PERIPHERAL {{ENABLE 1} {IO {PMC_MIO 26 .. 51}}}     PMC_MIO12 {{AUX_IO 0} {DIRECTION out} {DRIVE_STRENGTH 8mA} {OUTPUT_DATA default}         {PULL pullup} {SCHMITT 0} {SLEW slow} {USAGE GPIO}}     PMC_MIO37 {{AUX_IO 0} {DIRECTION out} {DRIVE_STRENGTH 8mA} {OUTPUT_DATA high}         {PULL pullup} {SCHMITT 0} {SLEW slow} {USAGE GPIO}}     PMC_OSPI_PERIPHERAL {{ENABLE 1} {IO {PMC_MIO 0 .. 11}} {MODE Single}}     PMC_QSPI_PERIPHERAL_ENABLE {0}     PMC_REF_CLK_FREQMHZ {33.333}     PMC_SD1 {{CD_ENABLE 1} {CD_IO {PMC_MIO 28}} {POW_ENABLE 1} {POW_IO {PMC_MIO 51}}         {RESET_ENABLE 0} {RESET_IO {PMC_MIO 12}} {WP_ENABLE 0} {WP_IO {PMC_MIO 1}}}     PMC_SD1_PERIPHERAL {{CLK_100_SDR_OTAP_DLY 0x3} {CLK_200_SDR_OTAP_DLY 0x2}         {CLK_50_DDR_ITAP_DLY 0x2A} {CLK_50_DDR_OTAP_DLY 0x3} {CLK_50_SDR_ITAP_DLY 0x25}        {CLK_50_SDR_OTAP_DLY 0x4} {ENABLE 1} {IO {PMC_MIO 26 .. 36}}}     PMC_SD1_SLOT_TYPE {SD 3.0 AUTODIR}     PMC_USE_PMC_NOC_AXI0 {1}     PS_BOARD_INTERFACE {ps_pmc_fixed_io}     PS_ENET0_MDIO {{ENABLE 1} {IO {PS_MIO 24 .. 25}}}     PS_ENET0_PERIPHERAL {{ENABLE 1} {IO {PS_MIO 0 .. 11}}}     PS_GEN_IPI0_ENABLE {1}     PS_GEN_IPI0_MASTER {A72}     PS_GEN_IPI1_ENABLE {1}     PS_GEN_IPI2_ENABLE {1}     PS_GEN_IPI3_ENABLE {1}     PS_GEN_IPI4_ENABLE {1}     PS_GEN_IPI5_ENABLE {1}     PS_GEN_IPI6_ENABLE {1}     PS_I2C0_PERIPHERAL {{ENABLE 1} {IO {PMC_MIO 46 .. 47}}}     PS_I2C1_PERIPHERAL {{ENABLE 1} {IO {PMC_MIO 44 .. 45}}}     PS_I2CSYSMON_PERIPHERAL {{ENABLE 0} {IO {PMC_MIO 39 .. 40}}}     PS_IRQ_USAGE {{CH0 0} {CH1 0} {CH10 0} {CH11 0} {CH12 0} {CH13 0} {CH14 0}         {CH15 0} {CH2 0} {CH3 0} {CH4 0} {CH5 0} {CH6 0} {CH7 0} {CH8 1} {CH9 0}}     PS_MIO7 {{AUX_IO 0} {DIRECTION in} {DRIVE_STRENGTH 8mA} {OUTPUT_DATA default}         {PULL disable} {SCHMITT 0} {SLEW slow} {USAGE Reserved}}     PS_MIO9 {{AUX_IO 0} {DIRECTION in} {DRIVE_STRENGTH 8mA} {OUTPUT_DATA default}         {PULL disable} {SCHMITT 0} {SLEW slow} {USAGE Reserved}}     PS_NUM_FABRIC_RESETS {1}     PS_PCIE_EP_RESET1_IO {PS_MIO 18}     PS_PCIE_EP_RESET2_IO {PS_MIO 19}     PS_PCIE_RESET {ENABLE 1}     PS_UART0_PERIPHERAL {{ENABLE 1} {IO {PMC_MIO 42 .. 43}}}     PS_USB3_PERIPHERAL {{ENABLE 1} {IO {PMC_MIO 13 .. 25}}}     PS_USE_FPD_AXI_NOC0 {1}     PS_USE_FPD_AXI_NOC1 {1}     PS_USE_FPD_CCI_NOC {1}     PS_USE_M_AXI_FPD {1}     PS_USE_NOC_LPD_AXI0 {1}     PS_USE_PMCPL_CLK0 {1}     SMON_ALARMS {Set_Alarms_On}     SMON_ENABLE_TEMP_AVERAGING {0}     SMON_INTERFACE_TO_USE {I2C}     SMON_PMBUS_ADDRESS {0x18}     SMON_TEMP_AVERAGING_SAMPLES {0}     } ] [get_bd_cells CIPS_0]
+set_property -dict [list CONFIG.CLOCK_MODE {Custom} CONFIG.DDR_MEMORY_MODE {Custom} CONFIG.PS_BOARD_INTERFACE {Custom} CONFIG.PS_PL_CONNECTIVITY_MODE {Custom} CONFIG.PS_PMC_CONFIG {     BOOT_MODE {Custom}     CLOCK_MODE {Custom}     DESIGN_MODE {1}     DEVICE_INTEGRITY_MODE {Sysmon temperature voltage and external IO monitoring}     PMC_CRP_PL0_REF_CTRL_FREQMHZ {350.00}     PMC_GPIO0_MIO_PERIPHERAL {{ENABLE 1} {IO {PMC_MIO 0 .. 25}}}     PMC_GPIO1_MIO_PERIPHERAL {{ENABLE 1} {IO {PMC_MIO 26 .. 51}}}     PMC_MIO12 {{AUX_IO 0} {DIRECTION out} {DRIVE_STRENGTH 8mA} {OUTPUT_DATA default}         {PULL pullup} {SCHMITT 0} {SLEW slow} {USAGE GPIO}}     PMC_MIO37 {{AUX_IO 0} {DIRECTION out} {DRIVE_STRENGTH 8mA} {OUTPUT_DATA high}         {PULL pullup} {SCHMITT 0} {SLEW slow} {USAGE GPIO}}     PMC_OSPI_PERIPHERAL {{ENABLE 1} {IO {PMC_MIO 0 .. 11}} {MODE Single}}     PMC_QSPI_PERIPHERAL_ENABLE {0}     PMC_REF_CLK_FREQMHZ {33.333}     PMC_SD1 {{CD_ENABLE 1} {CD_IO {PMC_MIO 28}} {POW_ENABLE 1} {POW_IO {PMC_MIO 51}}         {RESET_ENABLE 0} {RESET_IO {PMC_MIO 12}} {WP_ENABLE 0} {WP_IO {PMC_MIO 1}}}     PMC_SD1_PERIPHERAL {{CLK_100_SDR_OTAP_DLY 0x3} {CLK_200_SDR_OTAP_DLY 0x2}         {CLK_50_DDR_ITAP_DLY 0x2A} {CLK_50_DDR_OTAP_DLY 0x3} {CLK_50_SDR_ITAP_DLY 0x25}        {CLK_50_SDR_OTAP_DLY 0x4} {ENABLE 1} {IO {PMC_MIO 26 .. 36}}}     PMC_SD1_SLOT_TYPE {SD 3.0 AUTODIR}     PMC_USE_PMC_NOC_AXI0 {1}     PS_BOARD_INTERFACE {ps_pmc_fixed_io}     PS_ENET0_MDIO {{ENABLE 1} {IO {PS_MIO 24 .. 25}}}     PS_ENET0_PERIPHERAL {{ENABLE 1} {IO {PS_MIO 0 .. 11}}}     PS_GEN_IPI0_ENABLE {1}     PS_GEN_IPI0_MASTER {A72}     PS_GEN_IPI1_ENABLE {1}     PS_GEN_IPI2_ENABLE {1}     PS_GEN_IPI3_ENABLE {1}     PS_GEN_IPI4_ENABLE {1}     PS_GEN_IPI5_ENABLE {1}     PS_GEN_IPI6_ENABLE {1}     PS_I2C0_PERIPHERAL {{ENABLE 1} {IO {PMC_MIO 46 .. 47}}}     PS_I2C1_PERIPHERAL {{ENABLE 1} {IO {PMC_MIO 44 .. 45}}}     PS_I2CSYSMON_PERIPHERAL {{ENABLE 0} {IO {PMC_MIO 39 .. 40}}}     PS_IRQ_USAGE {{CH0 0} {CH1 0} {CH10 0} {CH11 0} {CH12 0} {CH13 0} {CH14 0}         {CH15 0} {CH2 0} {CH3 0} {CH4 0} {CH5 0} {CH6 0} {CH7 0} {CH8 1} {CH9 0}}     PS_MIO7 {{AUX_IO 0} {DIRECTION in} {DRIVE_STRENGTH 8mA} {OUTPUT_DATA default}         {PULL disable} {SCHMITT 0} {SLEW slow} {USAGE Reserved}}     PS_MIO9 {{AUX_IO 0} {DIRECTION in} {DRIVE_STRENGTH 8mA} {OUTPUT_DATA default}         {PULL disable} {SCHMITT 0} {SLEW slow} {USAGE Reserved}}     PS_NUM_FABRIC_RESETS {1}     PS_PCIE_EP_RESET1_IO {PS_MIO 18}     PS_PCIE_EP_RESET2_IO {PS_MIO 19}     PS_PCIE_RESET {ENABLE 1}     PS_UART0_PERIPHERAL {{ENABLE 1} {IO {PMC_MIO 42 .. 43}}}     PS_USB3_PERIPHERAL {{ENABLE 1} {IO {PMC_MIO 13 .. 25}}}     PS_USE_FPD_AXI_NOC0 {1}     PS_USE_FPD_AXI_NOC1 {1}     PS_USE_FPD_CCI_NOC {1}     PS_USE_M_AXI_FPD {1}     PS_USE_NOC_LPD_AXI0 {1}     PS_USE_PMCPL_CLK0 {1}     SMON_ALARMS {Set_Alarms_On}     SMON_ENABLE_TEMP_AVERAGING {0}     SMON_INTERFACE_TO_USE {I2C}     SMON_PMBUS_ADDRESS {0x18}     SMON_TEMP_AVERAGING_SAMPLES {0}     } ] [get_bd_cells CIPS_0]
 
 
-set_property -dict [list CONFIG.PS_PMC_CONFIG {     PMC_CRP_PL0_REF_CTRL_FREQMHZ {300.0}
-} ] $CIPS_0
+# set_property -dict [list CONFIG.PS_PMC_CONFIG { PMC_CRP_PL0_REF_CTRL_FREQMHZ {400.00}} ] $CIPS_0
 
 set_property CONFIG.PS_PMC_CONFIG {PS_USE_M_AXI_FPD {0}} $CIPS_0
 
@@ -158,7 +157,7 @@ connect_bd_intf_net     [get_bd_intf_pins cips_noc/M00_INI] [get_bd_intf_pins ax
 
 startgroup
 # Add RTL module to BD
-set dut [create_bd_cell -type module -reference ffn_core dut_0]
+set dut [create_bd_cell -type module -reference qwen_block dut_0]
 
 # Associate AXI interfaces to clock
 # Assumes there is one clock and all AXI pins use the same clock
@@ -168,134 +167,154 @@ endgroup
 
 startgroup
 
-set_property -dict [list     CONFIG.NUM_HBM_BLI {21}     CONFIG.NUM_SI {0}     CONFIG.NUM_CLKS {1}     CONFIG.HBM_MEM_BACKDOOR_WRITE {false}     CONFIG.HBM_MEM_INIT_FILE {no_file_loaded}] $axi_noc_dut
+set_property -dict [list     CONFIG.NUM_HBM_BLI {25}     CONFIG.NUM_SI {0}     CONFIG.NUM_CLKS {1}     CONFIG.HBM_MEM_BACKDOOR_WRITE {false}     CONFIG.HBM_MEM_INIT_FILE {no_file_loaded}] $axi_noc_dut
 
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM0_PORT1 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
     sep_rt_group {0} }}] [get_bd_intf_pins /axi_noc_dut/HBM00_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_centroid_buffer]     [get_bd_intf_pins /axi_noc_dut/HBM00_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_centroid_buffer_0]     [get_bd_intf_pins /axi_noc_dut/HBM00_AXI]
+
+set_property -dict [list CONFIG.CONNECTIONS {HBM0_PORT2 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
+    # excl_group {} \
+    sep_rt_group {1} }}] [get_bd_intf_pins /axi_noc_dut/HBM01_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_centroid_buffer_1]     [get_bd_intf_pins /axi_noc_dut/HBM01_AXI]
 
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM0_PORT0 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
-    sep_rt_group {1} }}] [get_bd_intf_pins /axi_noc_dut/HBM01_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_input_buffer]     [get_bd_intf_pins /axi_noc_dut/HBM01_AXI]
-
-
-set_property -dict [list CONFIG.CONNECTIONS {HBM0_PORT3 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
-    # excl_group {} \
     sep_rt_group {2} }}] [get_bd_intf_pins /axi_noc_dut/HBM02_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_buffer_0]     [get_bd_intf_pins /axi_noc_dut/HBM02_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_input_buffer]     [get_bd_intf_pins /axi_noc_dut/HBM02_AXI]
 
 
-set_property -dict [list CONFIG.CONNECTIONS {HBM0_PORT2 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
+set_property -dict [list CONFIG.CONNECTIONS {HBM1_PORT0 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
     sep_rt_group {3} }}] [get_bd_intf_pins /axi_noc_dut/HBM03_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_buffer_1]     [get_bd_intf_pins /axi_noc_dut/HBM03_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_weight_idx_buffer_0]     [get_bd_intf_pins /axi_noc_dut/HBM03_AXI]
+
+
+set_property -dict [list CONFIG.CONNECTIONS {HBM1_PORT2 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
+    # excl_group {} \
+    sep_rt_group {4} }}] [get_bd_intf_pins /axi_noc_dut/HBM04_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_weight_idx_buffer_1]     [get_bd_intf_pins /axi_noc_dut/HBM04_AXI]
 
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM1_PORT1 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
-    sep_rt_group {4} }}] [get_bd_intf_pins /axi_noc_dut/HBM04_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_buffer_2]     [get_bd_intf_pins /axi_noc_dut/HBM04_AXI]
+    sep_rt_group {5} }}] [get_bd_intf_pins /axi_noc_dut/HBM05_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_weight_idx_buffer_2]     [get_bd_intf_pins /axi_noc_dut/HBM05_AXI]
 
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM1_PORT3 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
-    sep_rt_group {5} }}] [get_bd_intf_pins /axi_noc_dut/HBM05_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_buffer_3]     [get_bd_intf_pins /axi_noc_dut/HBM05_AXI]
+    sep_rt_group {6} }}] [get_bd_intf_pins /axi_noc_dut/HBM06_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_weight_idx_buffer_3]     [get_bd_intf_pins /axi_noc_dut/HBM06_AXI]
 
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM2_PORT1 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
-    sep_rt_group {6} }}] [get_bd_intf_pins /axi_noc_dut/HBM06_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_buffer_4]     [get_bd_intf_pins /axi_noc_dut/HBM06_AXI]
+    sep_rt_group {7} }}] [get_bd_intf_pins /axi_noc_dut/HBM07_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_weight_idx_buffer_4]     [get_bd_intf_pins /axi_noc_dut/HBM07_AXI]
 
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM2_PORT3 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
-    sep_rt_group {7} }}] [get_bd_intf_pins /axi_noc_dut/HBM07_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_buffer_5]     [get_bd_intf_pins /axi_noc_dut/HBM07_AXI]
+    sep_rt_group {8} }}] [get_bd_intf_pins /axi_noc_dut/HBM08_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_weight_idx_buffer_5]     [get_bd_intf_pins /axi_noc_dut/HBM08_AXI]
 
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM3_PORT1 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
-    sep_rt_group {8} }}] [get_bd_intf_pins /axi_noc_dut/HBM08_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_buffer_6]     [get_bd_intf_pins /axi_noc_dut/HBM08_AXI]
+    sep_rt_group {9} }}] [get_bd_intf_pins /axi_noc_dut/HBM09_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_weight_idx_buffer_6]     [get_bd_intf_pins /axi_noc_dut/HBM09_AXI]
 
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM3_PORT3 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
-    sep_rt_group {9} }}] [get_bd_intf_pins /axi_noc_dut/HBM09_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_buffer_7]     [get_bd_intf_pins /axi_noc_dut/HBM09_AXI]
+    sep_rt_group {10} }}] [get_bd_intf_pins /axi_noc_dut/HBM10_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_weight_idx_buffer_7]     [get_bd_intf_pins /axi_noc_dut/HBM10_AXI]
 
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM4_PORT1 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
-    sep_rt_group {10} }}] [get_bd_intf_pins /axi_noc_dut/HBM10_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_weight_idx_buffer_0]     [get_bd_intf_pins /axi_noc_dut/HBM10_AXI]
+    sep_rt_group {11} }}] [get_bd_intf_pins /axi_noc_dut/HBM11_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_weight_idx_buffer_8]     [get_bd_intf_pins /axi_noc_dut/HBM11_AXI]
 
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM4_PORT3 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
-    sep_rt_group {11} }}] [get_bd_intf_pins /axi_noc_dut/HBM11_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_weight_idx_buffer_1]     [get_bd_intf_pins /axi_noc_dut/HBM11_AXI]
+    sep_rt_group {12} }}] [get_bd_intf_pins /axi_noc_dut/HBM12_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_weight_idx_buffer_9]     [get_bd_intf_pins /axi_noc_dut/HBM12_AXI]
 
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM5_PORT1 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
-    sep_rt_group {12} }}] [get_bd_intf_pins /axi_noc_dut/HBM12_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_weight_idx_buffer_2]     [get_bd_intf_pins /axi_noc_dut/HBM12_AXI]
+    sep_rt_group {13} }}] [get_bd_intf_pins /axi_noc_dut/HBM13_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_weight_idx_buffer_10]     [get_bd_intf_pins /axi_noc_dut/HBM13_AXI]
 
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM5_PORT3 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
-    sep_rt_group {13} }}] [get_bd_intf_pins /axi_noc_dut/HBM13_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_weight_idx_buffer_3]     [get_bd_intf_pins /axi_noc_dut/HBM13_AXI]
+    sep_rt_group {14} }}] [get_bd_intf_pins /axi_noc_dut/HBM14_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_weight_idx_buffer_11]     [get_bd_intf_pins /axi_noc_dut/HBM14_AXI]
 
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM6_PORT1 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
-    sep_rt_group {14} }}] [get_bd_intf_pins /axi_noc_dut/HBM14_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_weight_idx_buffer_4]     [get_bd_intf_pins /axi_noc_dut/HBM14_AXI]
+    sep_rt_group {15} }}] [get_bd_intf_pins /axi_noc_dut/HBM15_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_weight_idx_buffer_12]     [get_bd_intf_pins /axi_noc_dut/HBM15_AXI]
 
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM6_PORT3 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
-    sep_rt_group {15} }}] [get_bd_intf_pins /axi_noc_dut/HBM15_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_weight_idx_buffer_5]     [get_bd_intf_pins /axi_noc_dut/HBM15_AXI]
+    sep_rt_group {16} }}] [get_bd_intf_pins /axi_noc_dut/HBM16_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_weight_idx_buffer_13]     [get_bd_intf_pins /axi_noc_dut/HBM16_AXI]
 
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM7_PORT1 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
-    sep_rt_group {16} }}] [get_bd_intf_pins /axi_noc_dut/HBM16_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_weight_idx_buffer_6]     [get_bd_intf_pins /axi_noc_dut/HBM16_AXI]
+    sep_rt_group {17} }}] [get_bd_intf_pins /axi_noc_dut/HBM17_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_weight_idx_buffer_14]     [get_bd_intf_pins /axi_noc_dut/HBM17_AXI]
 
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM7_PORT3 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
-    sep_rt_group {17} }}] [get_bd_intf_pins /axi_noc_dut/HBM17_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_weight_idx_buffer_7]     [get_bd_intf_pins /axi_noc_dut/HBM17_AXI]
+    sep_rt_group {18} }}] [get_bd_intf_pins /axi_noc_dut/HBM18_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_lut_weight_idx_buffer_15]     [get_bd_intf_pins /axi_noc_dut/HBM18_AXI]
 
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM8_PORT1 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
-    sep_rt_group {18} }}] [get_bd_intf_pins /axi_noc_dut/HBM18_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_scale_zero_buffer]     [get_bd_intf_pins /axi_noc_dut/HBM18_AXI]
+    sep_rt_group {19} }}] [get_bd_intf_pins /axi_noc_dut/HBM19_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_scale_zero_buffer]     [get_bd_intf_pins /axi_noc_dut/HBM19_AXI]
+
+set_property -dict [list CONFIG.CONNECTIONS {HBM8_PORT3 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
+    # excl_group {} \
+    sep_rt_group {20} }}] [get_bd_intf_pins /axi_noc_dut/HBM20_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_sin_buffer]     [get_bd_intf_pins /axi_noc_dut/HBM20_AXI]
+
+set_property -dict [list CONFIG.CONNECTIONS {HBM9_PORT1 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
+    # excl_group {} \
+    sep_rt_group {21} }}] [get_bd_intf_pins /axi_noc_dut/HBM21_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_cos_buffer]     [get_bd_intf_pins /axi_noc_dut/HBM21_AXI]
+
+set_property -dict [list CONFIG.CONNECTIONS {HBM9_PORT3 {     read_bw {13900}     write_bw {-100}     read_avg_burst {8}     write_avg_burst {8} \
+    # excl_group {} \
+    sep_rt_group {22} }}] [get_bd_intf_pins /axi_noc_dut/HBM22_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_rms_norm_weight_buffer]     [get_bd_intf_pins /axi_noc_dut/HBM22_AXI]
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM15_PORT2 {     read_bw {-100}     write_bw {1500}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
-    sep_rt_group {19} }}] [get_bd_intf_pins /axi_noc_dut/HBM19_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_cycle_count]     [get_bd_intf_pins /axi_noc_dut/HBM19_AXI]
+    sep_rt_group {23} }}] [get_bd_intf_pins /axi_noc_dut/HBM23_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_cycle_count]     [get_bd_intf_pins /axi_noc_dut/HBM23_AXI]
 
 
 set_property -dict [list CONFIG.CONNECTIONS {HBM15_PORT0 {     read_bw {-100}     write_bw {13900}     read_avg_burst {8}     write_avg_burst {8} \
     # excl_group {} \
-    sep_rt_group {20} }}] [get_bd_intf_pins /axi_noc_dut/HBM20_AXI]
-connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_ffn_out_buffer]     [get_bd_intf_pins /axi_noc_dut/HBM20_AXI]
+    sep_rt_group {24} }}] [get_bd_intf_pins /axi_noc_dut/HBM24_AXI]
+connect_bd_intf_net [get_bd_intf_pins $dut/m_axi_out_buffer]     [get_bd_intf_pins /axi_noc_dut/HBM24_AXI]
 
-set_property -dict [list CONFIG.ASSOCIATED_BUSIF {HBM00_AXI:HBM01_AXI:HBM02_AXI:HBM03_AXI:HBM04_AXI:HBM05_AXI:HBM06_AXI:HBM07_AXI:HBM08_AXI:HBM09_AXI:HBM10_AXI:HBM11_AXI:HBM12_AXI:HBM13_AXI:HBM14_AXI:HBM15_AXI:HBM16_AXI:HBM17_AXI:HBM18_AXI:HBM19_AXI:HBM20_AXI}]             [get_bd_pins /axi_noc_dut/aclk0]
+set_property -dict [list CONFIG.ASSOCIATED_BUSIF {HBM00_AXI:HBM01_AXI:HBM02_AXI:HBM03_AXI:HBM04_AXI:HBM05_AXI:HBM06_AXI:HBM07_AXI:HBM08_AXI:HBM09_AXI:HBM10_AXI:HBM11_AXI:HBM12_AXI:HBM13_AXI:HBM14_AXI:HBM15_AXI:HBM16_AXI:HBM17_AXI:HBM18_AXI:HBM19_AXI:HBM20_AXI:HBM21_AXI:HBM22_AXI:HBM23_AXI:HBM24_AXI}]             [get_bd_pins /axi_noc_dut/aclk0]
 endgroup
 
 # Create external clk and reset ports for simulation
