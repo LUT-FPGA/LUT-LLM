@@ -59,10 +59,14 @@ void silu_out_writer(
 }
 
 void silu(
-    const int L,
+    tapa::istream<int>& L_in_fifo,
+    tapa::ostream<int>& L_out_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& input_fifo,
     tapa::ostream<tapa::vec_t<float, 16>>& output_fifo
 ) {
+
+    const int L = L_in_fifo.read();
+    L_out_fifo.write(L);
 
     for(int r = 0; r < L; r++){
         for(int i = 0; i < (FFN_DIM >> 4); i++){
@@ -134,21 +138,21 @@ void measure_cycle(tapa::istream<bool>& fifo_fin, tapa::mmap<int> cycle_count){
 
 //there are some problems with tapa fast cosim in axi interface modeling using ap_uint
 //top function for testing
-void silu_top(
-    const int L,
-    tapa::mmap<tapa::vec_t<float, 16>> input_buffer,
-    tapa::mmap<tapa::vec_t<float, 16>> out_buffer,
-    tapa::mmap<int> cycle_count
-) {
-    tapa::stream<tapa::vec_t<float, 16>> input_fifo("input_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> out_fifo("out_fifo");
-    tapa::stream<bool> fifo_fin("fifo_fin");
+// void silu_top(
+//     const int L,
+//     tapa::mmap<tapa::vec_t<float, 16>> input_buffer,
+//     tapa::mmap<tapa::vec_t<float, 16>> out_buffer,
+//     tapa::mmap<int> cycle_count
+// ) {
+//     tapa::stream<tapa::vec_t<float, 16>> input_fifo("input_fifo");
+//     tapa::stream<tapa::vec_t<float, 16>> out_fifo("out_fifo");
+//     tapa::stream<bool> fifo_fin("fifo_fin");
 
-    tapa::task()
-        .invoke<tapa::join>(silu_input_reader, L, input_buffer, input_fifo)
-        .invoke<tapa::join>(silu, L, input_fifo, out_fifo)
-        .invoke<tapa::join>(silu_out_writer, L, out_fifo, out_buffer, fifo_fin)
-        .invoke<tapa::join>(measure_cycle, fifo_fin, cycle_count);
-}
+//     tapa::task()
+//         .invoke<tapa::join>(silu_input_reader, L, input_buffer, input_fifo)
+//         .invoke<tapa::join>(silu, L, input_fifo, out_fifo)
+//         .invoke<tapa::join>(silu_out_writer, L, out_fifo, out_buffer, fifo_fin)
+//         .invoke<tapa::join>(measure_cycle, fifo_fin, cycle_count);
+// }
 
 #endif

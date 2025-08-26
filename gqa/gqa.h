@@ -112,11 +112,15 @@ void pe_16x16_2x128_simd(
 }
 
 void gemm_gqa_qk(
-    const int L,
+    tapa::istream<int>& L_in_fifo,
+    tapa::ostream<int>& L_out_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& input_fifo,
     tapa::ostream<tapa::vec_t<float, 16>>& pre_softmax_fifo
 ) {
     // compute grouped query attention
+
+    const int L = L_in_fifo.read();
+    L_out_fifo.write(L);
 
     for (int g = 0; g < NUM_GROUPS; g++){ // groups
 
@@ -224,11 +228,15 @@ void gemm_gqa_qk(
 }
 
 void gemm_gqa_av(
-    const int L,
+    tapa::istream<int>& L_in_fifo,
+    tapa::ostream<int>& L_out_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& input_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& post_softmax_fifo,
     tapa::ostream<tapa::vec_t<float, 16>>& output_fifo
 ){
+
+    const int L = L_in_fifo.read();
+    L_out_fifo.write(L);
 
     for (int g = 0; g < NUM_GROUPS; g++){ // groups
 
@@ -335,10 +343,15 @@ void gemm_gqa_av(
 }
 
 void softmax(
-    const int L,
+    tapa::istream<int>& L_in_fifo,
+    tapa::ostream<int>& L_out_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& pre_softmax_fifo,
     tapa::ostream<tapa::vec_t<float, 16>>& post_softmax_fifo
 ) {
+
+    const int L = L_in_fifo.read();
+    L_out_fifo.write(L);
+
     for(int g = 0; g < NUM_GROUPS; g++) {
         for (int r = 0; r < HEAD_PER_GROUP; r++) {
             for (int i = 0; i < L; i++) {
@@ -417,28 +430,28 @@ void measure_cycle(tapa::istream<bool>& fifo_fin, tapa::mmap<int> cycle_count){
 
 
 //top function for testing
-void gqa(
-    const int L,
-    tapa::mmap<tapa::vec_t<float, 16>> input_buffer,
-    tapa::mmap<tapa::vec_t<float, 16>> out_buffer,
-    tapa::mmap<int> cycle_count
-) {
-    tapa::stream<tapa::vec_t<float, 16>> input_fifo("input_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> input_fifo_qk("input_fifo_qk");
-    tapa::stream<tapa::vec_t<float, 16>> input_fifo_av("input_fifo_av");
-    tapa::stream<tapa::vec_t<float, 16>> out_fifo("out_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> pre_softmax_fifo("pre_softmax_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> post_softmax_fifo("post_softmax_fifo");
-    tapa::stream<bool> fifo_fin("fifo_fin");
+// void gqa(
+//     const int L,
+//     tapa::mmap<tapa::vec_t<float, 16>> input_buffer,
+//     tapa::mmap<tapa::vec_t<float, 16>> out_buffer,
+//     tapa::mmap<int> cycle_count
+// ) {
+//     tapa::stream<tapa::vec_t<float, 16>> input_fifo("input_fifo");
+//     tapa::stream<tapa::vec_t<float, 16>> input_fifo_qk("input_fifo_qk");
+//     tapa::stream<tapa::vec_t<float, 16>> input_fifo_av("input_fifo_av");
+//     tapa::stream<tapa::vec_t<float, 16>> out_fifo("out_fifo");
+//     tapa::stream<tapa::vec_t<float, 16>> pre_softmax_fifo("pre_softmax_fifo");
+//     tapa::stream<tapa::vec_t<float, 16>> post_softmax_fifo("post_softmax_fifo");
+//     tapa::stream<bool> fifo_fin("fifo_fin");
 
-    tapa::task()
-        .invoke<tapa::join>(gqa_input_reader, L, input_buffer, input_fifo)
-        .invoke<tapa::join>(gqa_arbiter, L, input_fifo, input_fifo_qk, input_fifo_av)
-        .invoke<tapa::join>(gemm_gqa_qk, L, input_fifo_qk, pre_softmax_fifo)
-        .invoke<tapa::join>(softmax, L, pre_softmax_fifo, post_softmax_fifo)
-        .invoke<tapa::join>(gemm_gqa_av, L, input_fifo_av, post_softmax_fifo, out_fifo)
-        .invoke<tapa::join>(out_writer, L, out_fifo, out_buffer, fifo_fin)
-        .invoke<tapa::join>(measure_cycle, fifo_fin, cycle_count);
-}
+//     tapa::task()
+//         .invoke<tapa::join>(gqa_input_reader, L, input_buffer, input_fifo)
+//         .invoke<tapa::join>(gqa_arbiter, L, input_fifo, input_fifo_qk, input_fifo_av)
+//         .invoke<tapa::join>(gemm_gqa_qk, L, input_fifo_qk, pre_softmax_fifo)
+//         .invoke<tapa::join>(softmax, L, pre_softmax_fifo, post_softmax_fifo)
+//         .invoke<tapa::join>(gemm_gqa_av, L, input_fifo_av, post_softmax_fifo, out_fifo)
+//         .invoke<tapa::join>(out_writer, L, out_fifo, out_buffer, fifo_fin)
+//         .invoke<tapa::join>(measure_cycle, fifo_fin, cycle_count);
+// }
 
 #endif

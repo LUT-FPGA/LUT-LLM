@@ -60,7 +60,8 @@ void rope_out_writer(
 
 template <int iter = 1>
 void apply_rotary_pos_emb(
-    const int L,
+    tapa::istream<int>& L_in_fifo,
+    tapa::ostream<int>& L_out_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& input_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& sin_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& cos_fifo,
@@ -72,6 +73,9 @@ void apply_rotary_pos_emb(
 
     #pragma HLS array_partition variable=sin cyclic factor=16 dim=2
     #pragma HLS array_partition variable=cos cyclic factor=16 dim=2
+
+    const int L = L_in_fifo.read();
+    L_out_fifo.write(L);
 
     for(int i = 0; i < L; i++){
         for(int j = 0; j < (HEAD_DIM >> 4); j++){
@@ -127,15 +131,15 @@ void apply_rotary_pos_emb(
     }
 }
 
-void apply_rotary_pos_emb_inst(
-    const int L,
-    tapa::istream<tapa::vec_t<float, 16>>& input_fifo,
-    tapa::istream<tapa::vec_t<float, 16>>& sin_fifo,
-    tapa::istream<tapa::vec_t<float, 16>>& cos_fifo,
-    tapa::ostream<tapa::vec_t<float, 16>>& out_fifo
-) {
-    apply_rotary_pos_emb<1>(L, input_fifo, sin_fifo, cos_fifo, out_fifo);
-}
+// void apply_rotary_pos_emb_inst(
+//     const int L,
+//     tapa::istream<tapa::vec_t<float, 16>>& input_fifo,
+//     tapa::istream<tapa::vec_t<float, 16>>& sin_fifo,
+//     tapa::istream<tapa::vec_t<float, 16>>& cos_fifo,
+//     tapa::ostream<tapa::vec_t<float, 16>>& out_fifo
+// ) {
+//     apply_rotary_pos_emb<1>(L, input_fifo, sin_fifo, cos_fifo, out_fifo);
+// }
 
 
 #ifndef TIMING
@@ -154,27 +158,27 @@ void measure_cycle(tapa::istream<bool>& fifo_fin, tapa::mmap<int> cycle_count){
 
 //there are some problems with tapa fast cosim in axi interface modeling using ap_uint
 //top function for testing
-void rope(
-    const int L,
-    tapa::mmap<tapa::vec_t<float, 16>> input_buffer,
-    tapa::mmap<tapa::vec_t<float, 16>> sin_buffer,
-    tapa::mmap<tapa::vec_t<float, 16>> cos_buffer,
-    tapa::mmap<tapa::vec_t<float, 16>> out_buffer,
-    tapa::mmap<int> cycle_count
-) {
-    tapa::stream<tapa::vec_t<float, 16>> input_fifo("input_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> sin_fifo("sin_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> cos_fifo("cos_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> out_fifo("out_fifo");
-    tapa::stream<bool> fifo_fin("fifo_fin");
+// void rope(
+//     const int L,
+//     tapa::mmap<tapa::vec_t<float, 16>> input_buffer,
+//     tapa::mmap<tapa::vec_t<float, 16>> sin_buffer,
+//     tapa::mmap<tapa::vec_t<float, 16>> cos_buffer,
+//     tapa::mmap<tapa::vec_t<float, 16>> out_buffer,
+//     tapa::mmap<int> cycle_count
+// ) {
+//     tapa::stream<tapa::vec_t<float, 16>> input_fifo("input_fifo");
+//     tapa::stream<tapa::vec_t<float, 16>> sin_fifo("sin_fifo");
+//     tapa::stream<tapa::vec_t<float, 16>> cos_fifo("cos_fifo");
+//     tapa::stream<tapa::vec_t<float, 16>> out_fifo("out_fifo");
+//     tapa::stream<bool> fifo_fin("fifo_fin");
 
-    tapa::task()
-        .invoke<tapa::join>(rope_input_reader, L, input_buffer, input_fifo)
-        .invoke<tapa::join>(rope_input_reader, L, sin_buffer, sin_fifo)
-        .invoke<tapa::join>(rope_input_reader, L, cos_buffer, cos_fifo)
-        .invoke<tapa::join>(apply_rotary_pos_emb_inst, L, input_fifo, sin_fifo, cos_fifo, out_fifo)
-        .invoke<tapa::join>(rope_out_writer, L, out_fifo, out_buffer, fifo_fin)
-        .invoke<tapa::join>(measure_cycle, fifo_fin, cycle_count);
-}
+//     tapa::task()
+//         .invoke<tapa::join>(rope_input_reader, L, input_buffer, input_fifo)
+//         .invoke<tapa::join>(rope_input_reader, L, sin_buffer, sin_fifo)
+//         .invoke<tapa::join>(rope_input_reader, L, cos_buffer, cos_fifo)
+//         .invoke<tapa::join>(apply_rotary_pos_emb_inst, L, input_fifo, sin_fifo, cos_fifo, out_fifo)
+//         .invoke<tapa::join>(rope_out_writer, L, out_fifo, out_buffer, fifo_fin)
+//         .invoke<tapa::join>(measure_cycle, fifo_fin, cycle_count);
+// }
 
 #endif

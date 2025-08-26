@@ -207,12 +207,13 @@ void input_splitter_attn(
 }
 
 void input_splitter_final(
-    const int L,
+    tapa::istream<int>& L_in_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& input_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& attn_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& up_gate_fifo,
     tapa::ostreams<tapa::vec_t<float, 2>, 8>& output_fifo
 ) {
+    const int L = L_in_fifo.read();
     for (int round = 0; round < 4; round++) {
         int in_size = (round == 3) ? (INTERM_DIM_DIV_2) : (HIDDEN_DIM_DIV_2);
         for(int i = 0; i < (L * in_size >> 4); i++){
@@ -368,14 +369,18 @@ void ccu_fp32(
 
 // 4x16 branching
 void treeccu_fp32(
-    const int L, // sequence length
-    const int in_size, // number of 2-element positions
+    tapa::istream<int>& L_in_fifo,
+    tapa::ostream<int>& L_out_ccu_fifo,
+    tapa::ostream<int>& L_out_mm_fifo,
     tapa::istream<tapa::vec_t<float, 2>>& inp,
     tapa::istream<tapa::vec_t<float, 2>>& centroid,
     tapa::ostream<ap_uint<8>>& idx_out
 ) {
+    const int L = L_in_fifo.read();
+    L_out_ccu_fifo.write(L);
+    L_out_mm_fifo.write(L);
 
-    for(int r = 0; r < (in_size >> 4); r++){
+    for(int r = 0; r < (TOTAL_CENTROID_SIZE >> 4); r++){
         #pragma HLS dataflow disable_start_propagation
 
         // Streams for carrying inp vectors between PEs
@@ -543,13 +548,14 @@ void input_reader(
 
 void input_reader_wide(
     const int L,
-    const int in_size,
     tapa::async_mmap<tapa::vec_t<float, 16>>& inp,
-    tapa::ostream<tapa::vec_t<float, 16>>& input_fifo
+    tapa::ostream<tapa::vec_t<float, 16>>& input_fifo,
+    tapa::ostream<int>& L_fifo
 ) {
-    for(int i_req = 0, i_resp = 0; i_resp < ((L * in_size) >> 4);){
+    L_fifo.write(L);
+    for(int i_req = 0, i_resp = 0; i_resp < ((L * HIDDEN_DIM) >> 4);){
         #pragma HLS pipeline II=1
-		if((i_req < ((L * in_size) >> 4)) & !inp.read_addr.full()){
+		if((i_req < ((L * HIDDEN_DIM) >> 4)) & !inp.read_addr.full()){
             inp.read_addr.try_write(i_req);
             ++i_req;
 		}
@@ -583,13 +589,12 @@ void centroid_reader(
 }
 
 void centroid_reader_split(
-    const int in_size,
     tapa::async_mmap<tapa::vec_t<float, 16>>& centroid,
     tapa::ostreams<tapa::vec_t<float, 2>, 8>& centroid_fifo
 ) {
-    for(int i_req = 0, i_resp = 0; i_resp < (4 * in_size);){
+    for(int i_req = 0, i_resp = 0; i_resp < (4 * TOTAL_CENTROID_SIZE);){
         #pragma HLS pipeline II=1
-        if((i_req < (4 * in_size)) & !centroid.read_addr.full()){
+        if((i_req < (4 * TOTAL_CENTROID_SIZE)) & !centroid.read_addr.full()){
             centroid.read_addr.try_write(i_req);
             ++i_req;
         }
@@ -648,24 +653,24 @@ void measure_cycle(tapa::istream<bool>& fifo_fin, tapa::mmap<int> cycle_count){
 #endif
 
 //top function for testing
-void ccu_fp32_top(
-    const int L,
-    tapa::mmap<tapa::vec_t<float, 16>> inp,
-    tapa::mmap<tapa::vec_t<float, 16>> centroid,
-    tapa::mmaps<int, 8> idx_out
-) {
-    tapa::stream<tapa::vec_t<float, 16>> input_fifo("input_fifo");
-    tapa::streams<tapa::vec_t<float, 2>, 8> input_split_fifo("input_split_fifo");
-    tapa::streams<tapa::vec_t<float, 2>, 8> centroid_fifo("centroid_fifo");
-    tapa::streams<ap_uint<8>, 8> idx_out_fifo("idx_out_fifo");
+// void ccu_fp32_top(
+//     const int L,
+//     tapa::mmap<tapa::vec_t<float, 16>> inp,
+//     tapa::mmap<tapa::vec_t<float, 16>> centroid,
+//     tapa::mmaps<int, 8> idx_out
+// ) {
+//     tapa::stream<tapa::vec_t<float, 16>> input_fifo("input_fifo");
+//     tapa::streams<tapa::vec_t<float, 2>, 8> input_split_fifo("input_split_fifo");
+//     tapa::streams<tapa::vec_t<float, 2>, 8> centroid_fifo("centroid_fifo");
+//     tapa::streams<ap_uint<8>, 8> idx_out_fifo("idx_out_fifo");
 
-    tapa::task()
-        .invoke<tapa::join>(input_reader_wide, L, 16, inp, input_fifo)
-        .invoke<tapa::join>(input_splitter, L, 8, input_fifo, input_split_fifo)
-        .invoke<tapa::join>(centroid_reader_split, 16, centroid, centroid_fifo)
-        .invoke<tapa::join, 8>(treeccu_fp32, L, 16, input_split_fifo, centroid_fifo, idx_out_fifo)
-        .invoke<tapa::join, 8>(idx_out_writer, L, 8, idx_out_fifo, idx_out);
+//     tapa::task()
+//         .invoke<tapa::join>(input_reader_wide, L, 16, inp, input_fifo)
+//         .invoke<tapa::join>(input_splitter, L, 8, input_fifo, input_split_fifo)
+//         .invoke<tapa::join>(centroid_reader_split, 16, centroid, centroid_fifo)
+//         .invoke<tapa::join, 8>(treeccu_fp32, L, 16, input_split_fifo, centroid_fifo, idx_out_fifo)
+//         .invoke<tapa::join, 8>(idx_out_writer, L, 8, idx_out_fifo, idx_out);
 
-}
+// }
 
 #endif

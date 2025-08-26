@@ -136,7 +136,9 @@ void rms_norm(
 }
 
 void rms_norm_cache(
-    const int L,
+    tapa::istream<int>& L_in_fifo,
+    tapa::ostreams<int, 2>& L_out_fifo,
+    tapa::ostream<int>& L_out_ccu_fifo, 
     tapa::istream<tapa::vec_t<float, 16>>& input_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& weight_fifo,
     tapa::ostreams<tapa::vec_t<float, 16>, 2>& linear_fifo,
@@ -146,6 +148,12 @@ void rms_norm_cache(
     //shared rms weight
     float weight[HIDDEN_DIM];
     #pragma HLS array_partition variable=weight cyclic factor=16
+
+    const int L = L_in_fifo.read();
+    L_out_fifo[0].write(L);
+    L_out_fifo[1].write(L);
+    L_out_ccu_fifo.write(L);
+
     for(int i = 0; i < (HIDDEN_DIM >> 4); i++){
         #pragma HLS pipeline II=1
         auto weight_vec = weight_fifo.read();
@@ -242,24 +250,24 @@ void measure_cycle(tapa::istream<bool>& fifo_fin, tapa::mmap<int> cycle_count){
 
 //there are some problems with tapa fast cosim in axi interface modeling using ap_uint
 //top function for testing
-void rms_norm_top(
-    const int L,
-    tapa::mmap<tapa::vec_t<float, 16>> input_buffer,
-    tapa::mmap<tapa::vec_t<float, 16>> weight_buffer,
-    tapa::mmap<tapa::vec_t<float, 16>> out_buffer,
-    tapa::mmap<int> cycle_count
-) {
-    tapa::stream<tapa::vec_t<float, 16>> input_fifo("input_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> weight_fifo("weight_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> out_fifo("out_fifo");
-    tapa::stream<bool> fifo_fin("fifo_fin");
+// void rms_norm_top(
+//     const int L,
+//     tapa::mmap<tapa::vec_t<float, 16>> input_buffer,
+//     tapa::mmap<tapa::vec_t<float, 16>> weight_buffer,
+//     tapa::mmap<tapa::vec_t<float, 16>> out_buffer,
+//     tapa::mmap<int> cycle_count
+// ) {
+//     tapa::stream<tapa::vec_t<float, 16>> input_fifo("input_fifo");
+//     tapa::stream<tapa::vec_t<float, 16>> weight_fifo("weight_fifo");
+//     tapa::stream<tapa::vec_t<float, 16>> out_fifo("out_fifo");
+//     tapa::stream<bool> fifo_fin("fifo_fin");
 
-    tapa::task()
-        .invoke<tapa::join>(rms_input_reader, L, input_buffer, input_fifo)
-        .invoke<tapa::join>(rms_weight_reader, weight_buffer, weight_fifo)
-        .invoke<tapa::join>(rms_norm, L, input_fifo, weight_fifo, out_fifo)
-        .invoke<tapa::join>(rms_out_writer, L, out_fifo, out_buffer, fifo_fin)
-        .invoke<tapa::join>(measure_cycle, fifo_fin, cycle_count);
-}
+//     tapa::task()
+//         .invoke<tapa::join>(rms_input_reader, L, input_buffer, input_fifo)
+//         .invoke<tapa::join>(rms_weight_reader, weight_buffer, weight_fifo)
+//         .invoke<tapa::join>(rms_norm, L, input_fifo, weight_fifo, out_fifo)
+//         .invoke<tapa::join>(rms_out_writer, L, out_fifo, out_buffer, fifo_fin)
+//         .invoke<tapa::join>(measure_cycle, fifo_fin, cycle_count);
+// }
 
 #endif

@@ -100,13 +100,12 @@ void weight_idx_reader(
 }
 
 void lut_weight_idx_reader(
-    const int total_size,
     tapa::async_mmap<tapa::vec_t<ap_uint<8>, 64>>& lut_weight_idx_buffer,
     tapa::ostream<tapa::vec_t<ap_uint<8>, 64>>& lut_weight_idx_fifo
 ) {
-    for(int i_req = 0, i_resp = 0; i_resp < total_size;){
+    for(int i_req = 0, i_resp = 0; i_resp < TOTAL_LUT_WEIGHT_SIZE;){
         #pragma HLS pipeline II=1
-        if((i_req < total_size) & !lut_weight_idx_buffer.read_addr.full()){
+        if((i_req < TOTAL_LUT_WEIGHT_SIZE) & !lut_weight_idx_buffer.read_addr.full()){
             lut_weight_idx_buffer.read_addr.try_write(i_req);
             ++i_req;
         }
@@ -121,14 +120,13 @@ void lut_weight_idx_reader(
 
 void linear_out_writer(
     const int L,
-    const int out_size,
     tapa::istream<tapa::vec_t<float, 16>>& out_fifo,
     tapa::async_mmap<tapa::vec_t<float, 16>>& linear_out_buffer,
     tapa::ostream<bool>& fifo_fin
 ) {
-    for(int i_req = 0, i_resp = 0; i_resp < ((L * out_size) >> 4);){
+    for(int i_req = 0, i_resp = 0; i_resp < ((L * HIDDEN_DIM) >> 4);){
         #pragma HLS pipeline II=1 style=stp
-        if((i_req < ((L * out_size) >> 4)) & !out_fifo.empty() & !linear_out_buffer.write_addr.full() & !linear_out_buffer.write_data.full()){
+        if((i_req < ((L * HIDDEN_DIM) >> 4)) & !out_fifo.empty() & !linear_out_buffer.write_addr.full() & !linear_out_buffer.write_data.full()){
             linear_out_buffer.write_addr.try_write(i_req);
             tapa::vec_t<float, 16> tmp; out_fifo.try_read(tmp);
             linear_out_buffer.write_data.try_write(tmp);
@@ -422,12 +420,13 @@ void memory_matcher_w_vq_half(
 }
 
 void memory_matcher_w_vq_half_final(
-    const int L,
+    tapa::istream<int>& L_in_fifo,
     tapa::istream<idx_t>& idx_fifo,
     tapa::istream<tapa::vec_t<ap_uint<8>, 64>>& lut_weight_idx_fifo,
     tapa::istreams<tapa::vec_t<ap_uint<48>, 8>, 16>& inbound_fifo,
     tapa::ostreams<tapa::vec_t<ap_uint<48>, 8>, 16>& outbound_fifo
 ) {
+    const int L = L_in_fifo.read();
     for (int round = 0; round < 4; round++){
     // read indices and parallel match
         const int in_size = (round == 3) ? INTERM_DIM_DIV_2 : HIDDEN_DIM_DIV_2;
@@ -711,12 +710,15 @@ void memory_matcher_w_vq_half_dsp(
 }
 
 void memory_matcher_w_vq_half_dsp_final(
-    const int L,
+    tapa::istream<int>& L_in_fifo,
     tapa::istream<idx_t>& idx_fifo,
     tapa::istream<tapa::vec_t<ap_uint<8>, 64>>& lut_weight_idx_fifo,
     tapa::istreams<tapa::vec_t<ap_uint<48>, 8>, 16>& inbound_fifo,
     tapa::ostreams<tapa::vec_t<ap_uint<48>, 8>, 16>& outbound_fifo
 ) {
+
+    const int L = L_in_fifo.read();
+
     for (int round = 0; round < 4; round++){
     // read indices and parallel match
         const int in_size = (round == 3) ? INTERM_DIM_DIV_2 : HIDDEN_DIM_DIV_2;
@@ -983,11 +985,14 @@ void memory_matcher_w_vq_head_half(
 }
 
 void memory_matcher_w_vq_head_half_final(
-    const int L,
+    tapa::istream<int>& L_in_fifo,
     tapa::istream<idx_t>& idx_fifo,
     tapa::istream<tapa::vec_t<ap_uint<8>, 64>>& lut_weight_idx_fifo,
     tapa::ostreams<tapa::vec_t<ap_uint<48>, 8>, 16>& outbound_fifo
 ) {
+
+    const int L = L_in_fifo.read();
+
     for (int round = 0; round < 4; round++) {
         // read indices and parallel match
         const int in_size = (round == 3) ? INTERM_DIM_DIV_2 : HIDDEN_DIM_DIV_2;
