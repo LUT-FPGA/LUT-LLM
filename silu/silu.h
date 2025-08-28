@@ -61,19 +61,19 @@ void silu_out_writer(
 void silu(
     tapa::istream<int>& L_in_fifo,
     tapa::ostream<int>& L_out_fifo,
-    tapa::istream<tapa::vec_t<float, 16>>& input_fifo,
-    tapa::ostream<tapa::vec_t<float, 16>>& output_fifo
+    tapa::istream<tapa::vec_t<float, 32>>& input_fifo,
+    tapa::ostream<tapa::vec_t<float, 32>>& output_fifo
 ) {
 
     const int L = L_in_fifo.read();
     L_out_fifo.write(L);
 
     for(int r = 0; r < L; r++){
-        for(int i = 0; i < (FFN_DIM >> 4); i++){
+        for(int i = 0; i < (FFN_DIM >> 5); i++){
             #pragma HLS pipeline II=1
-            tapa::vec_t<float, 16> input_vec = input_fifo.read();
-            tapa::vec_t<float, 16> output_vec;
-            for(int j = 0; j < 16; j++){
+            tapa::vec_t<float, 32> input_vec = input_fifo.read();
+            tapa::vec_t<float, 32> output_vec;
+            for(int j = 0; j < 32; j++){
                 #pragma HLS unroll
                 float slope = 0.0f;
                 float intercept = 0.0f;

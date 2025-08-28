@@ -71,8 +71,8 @@ void memory_matcher_acc_overlay_half(
     tapa::istream<ap_uint<64>>& scale_zero_fifo,
     tapa::ostream<tapa::vec_t<float, 16>>& rope_fifo, // stream to rope
     tapa::ostream<tapa::vec_t<float, 16>>& v_fifo,
-    tapa::ostream<tapa::vec_t<float, 16>>& up_out_fifo, // stream to splitter
-    tapa::ostream<tapa::vec_t<float, 16>>& gate_out_fifo, // stream to silu
+    tapa::ostream<tapa::vec_t<float, 32>>& up_out_fifo, // stream to splitter
+    tapa::ostream<tapa::vec_t<float, 32>>& gate_out_fifo, // stream to silu
     tapa::ostream<tapa::vec_t<float, 16>>& res_fifo // stream to residual bank
 ) {
     ap_uint<64> linear_out[MAX_SEQ_LEN][MAX_OUT_SIZE_DIV_2];
@@ -170,18 +170,18 @@ void memory_matcher_acc_overlay_half(
                 }
             }
         } else if (round == 2) {
-            for (int i = 0; i < (INTERM_DIM >> 3); i++) {
+            for (int i = 0; i < (INTERM_DIM >> 4); i++) {
                 for (int j = 0; j < L; j++){
                     #pragma HLS pipeline II=1
-                    tapa::vec_t<float, 16> tmp;
-                    float scale = tapa::bit_cast<float>(ap_uint<32>(pack_dequant[i/INTERM_DIM_DIV_16](31, 0)));
-                    float zeropoint = tapa::bit_cast<float>(ap_uint<32>(pack_dequant[i/INTERM_DIM_DIV_16](63, 32)));
-                    for (int k = 0; k < 8; k++) {
+                    tapa::vec_t<float, 32> tmp;
+                    float scale = tapa::bit_cast<float>(ap_uint<32>(pack_dequant[i/INTERM_DIM_DIV_32](31, 0)));
+                    float zeropoint = tapa::bit_cast<float>(ap_uint<32>(pack_dequant[i/INTERM_DIM_DIV_32](63, 32)));
+                    for (int k = 0; k < 16; k++) {
                         #pragma HLS unroll
-                        tmp[k*2] = (float) (ap_uint<22>(linear_out[j][i * 8 + k](21, 0)).to_int()) * scale - zeropoint;
-                        tmp[k*2 + 1] = (float) (ap_uint<22>(linear_out[j][i * 8 + k](43, 22)).to_int()) * scale - zeropoint;
+                        tmp[k*2] = (float) (ap_uint<22>(linear_out[j][i * 16 + k](21, 0)).to_int()) * scale - zeropoint;
+                        tmp[k*2 + 1] = (float) (ap_uint<22>(linear_out[j][i * 16 + k](43, 22)).to_int()) * scale - zeropoint;
                     }
-                    if (i < INTERM_DIM_DIV_16) {
+                    if (i < INTERM_DIM_DIV_32) {
                         up_out_fifo.write(tmp);
                     } else {
                         gate_out_fifo.write(tmp);
@@ -209,8 +209,8 @@ void memory_matcher_acc_overlay_half(
 
 void element_wise_mul(
     tapa::istream<int>& L_in_fifo,
-    tapa::istream<tapa::vec_t<float, 16>>& up_fifo,
-    tapa::istream<tapa::vec_t<float, 16>>& gate_fifo,
+    tapa::istream<tapa::vec_t<float, 32>>& up_fifo,
+    tapa::istream<tapa::vec_t<float, 32>>& gate_fifo,
     tapa::ostreams<tapa::vec_t<float, 16>, 2>& out_fifo
 ) {
     ap_uint<64> linear_out[MAX_SEQ_LEN][INTERM_DIM_DIV_2];
@@ -219,28 +219,28 @@ void element_wise_mul(
 
     const int L = L_in_fifo.read();
 
-    for (int i = 0; i < (INTERM_DIM >> 4); i++) {
+    for (int i = 0; i < (INTERM_DIM >> 5); i++) {
         for (int j = 0; j < L; j++){
             #pragma HLS pipeline II=1
-            tapa::vec_t<float, 16> tmp = up_fifo.read();
-            for (int k = 0; k < 8; k++) {
+            tapa::vec_t<float, 32> tmp = up_fifo.read();
+            for (int k = 0; k < 16; k++) {
                 #pragma HLS unroll
-                linear_out[j][i * 8 + k] = ap_uint<64>((tapa::bit_cast<ap_uint<32>>(tmp[k*2+1]), tapa::bit_cast<ap_uint<32>>(tmp[k*2])));
+                linear_out[j][i * 16 + k] = ap_uint<64>((tapa::bit_cast<ap_uint<32>>(tmp[k*2+1]), tapa::bit_cast<ap_uint<32>>(tmp[k*2])));
             }
         }
     }
 
-    for(int i = 0; i < (INTERM_DIM >> 4); i++) {
+    for(int i = 0; i < (INTERM_DIM >> 5); i++) {
         for(int j = 0; j < L; j++) {
             #pragma HLS pipeline II=1
-            tapa::vec_t<float, 16> tmp = gate_fifo.read();
-            for (int k = 0; k < 8; k++) {
+            tapa::vec_t<float, 32> tmp = gate_fifo.read();
+            for (int k = 0; k < 16; k++) {
                 #pragma HLS unroll
-                float op1 = tapa::bit_cast<float>(ap_uint<32>(linear_out[j][i * 8 + k](31, 0)));
-                float op2 = tapa::bit_cast<float>(ap_uint<32>(linear_out[j][i * 8 + k](63, 32)));
+                float op1 = tapa::bit_cast<float>(ap_uint<32>(linear_out[j][i * 16 + k](31, 0)));
+                float op2 = tapa::bit_cast<float>(ap_uint<32>(linear_out[j][i * 16 + k](63, 32)));
                 op1 *= tmp[k*2];
                 op2 *= tmp[k*2 + 1];
-                linear_out[j][i*8+k] = ap_uint<64>((tapa::bit_cast<ap_uint<32>>(op2), tapa::bit_cast<ap_uint<32>>(op1)));
+                linear_out[j][i*16+k] = ap_uint<64>((tapa::bit_cast<ap_uint<32>>(op2), tapa::bit_cast<ap_uint<32>>(op1)));
             }
         }
     }
@@ -372,9 +372,9 @@ void qwen_block(
     tapa::stream<tapa::vec_t<float, 16>> post_softmax_fifo("post_softmax_fifo");
 
     tapa::streams<tapa::vec_t<float, 16>, 2> up_gate_fifo("up_gate_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> gate_before_silu_fifo("gate_before_silu_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> gate_after_silu_fifo("gate_after_silu_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> up_out_fifo("up_out_fifo");
+    tapa::stream<tapa::vec_t<float, 32>> gate_before_silu_fifo("gate_before_silu_fifo");
+    tapa::stream<tapa::vec_t<float, 32>> gate_after_silu_fifo("gate_after_silu_fifo");
+    tapa::stream<tapa::vec_t<float, 32>> up_out_fifo("up_out_fifo");
 
     tapa::stream<tapa::vec_t<float, 16>> norm_in_fifo("norm_in_fifo");
     tapa::stream<tapa::vec_t<float, 16>> norm_weight_fifo("norm_weight_fifo");
