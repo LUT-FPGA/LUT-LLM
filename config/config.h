@@ -39,6 +39,7 @@ constexpr int INTERM_DIM = 6144;
 constexpr int INTERM_DIM_MUL_2 = INTERM_DIM * 2;
 constexpr int INTERM_DIM_DIV_2 = INTERM_DIM / 2;
 constexpr int INTERM_DIM_DIV_16 = INTERM_DIM / 16;
+constexpr int INTERM_DIM_DIV_32 = INTERM_DIM / 32;
 constexpr int NUM_ROPE_HEADS = NUM_HEADS + NUM_GROUPS;
 
 constexpr int FFN_LUT_SIZE = HIDDEN_DIM_DIV_2 * INTERM_DIM_MUL_2 + INTERM_DIM_DIV_2 * HIDDEN_DIM;

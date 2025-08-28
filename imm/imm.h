@@ -121,12 +121,11 @@ void lut_weight_idx_reader(
 void linear_out_writer(
     const int L,
     tapa::istream<tapa::vec_t<float, 16>>& out_fifo,
-    tapa::async_mmap<tapa::vec_t<float, 16>>& linear_out_buffer,
-    tapa::ostream<bool>& fifo_fin
+    tapa::async_mmap<tapa::vec_t<float, 16>>& linear_out_buffer
 ) {
-    for(int i_req = 0, i_resp = 0; i_resp < ((L * HIDDEN_DIM) >> 4);){
+    for(int i_req = 0, i_resp = 0; i_resp < ((L * HIDDEN_DIM) >> 5);){
         #pragma HLS pipeline II=1 style=stp
-        if((i_req < ((L * HIDDEN_DIM) >> 4)) & !out_fifo.empty() & !linear_out_buffer.write_addr.full() & !linear_out_buffer.write_data.full()){
+        if((i_req < ((L * HIDDEN_DIM) >> 5)) & !out_fifo.empty() & !linear_out_buffer.write_addr.full() & !linear_out_buffer.write_data.full()){
             linear_out_buffer.write_addr.try_write(i_req);
             tapa::vec_t<float, 16> tmp; out_fifo.try_read(tmp);
             linear_out_buffer.write_data.try_write(tmp);
@@ -138,7 +137,6 @@ void linear_out_writer(
             i_resp += unsigned(resp)+1;
         }
     }
-    fifo_fin.write(true);
 }
 
 template<int para_write = 16, int para_access_factor = 128>

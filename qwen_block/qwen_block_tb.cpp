@@ -354,11 +354,14 @@ int main(int argc, char* argv[]) {
     
     // Pack input into hardware format (wide format: L * HIDDEN_DIM_DIV_2 vectors of 16 floats)
     // Following input_reader_wide pattern from qwen_block.h
-    std::vector<tapa::vec_t<float, 16>> input_hw(L * HIDDEN_DIM / 16);
+    std::vector<std::vector<tapa::vec_t<float, 16>>> input_hw(2, std::vector<tapa::vec_t<float, 16>>(L * HIDDEN_DIM / 32));
     for (int i = 0; i < L; i++) {
-        for (int j = 0; j < HIDDEN_DIM / 16; j++) {
+        for (int j = 0; j < HIDDEN_DIM / 32; j++) {
             for (int k = 0; k < 16; k++) {
-                input_hw[i * HIDDEN_DIM / 16 + j][k] = input[i][j * 16 + k];
+                input_hw[0][i * HIDDEN_DIM / 32 + j][k] = input[i][j * 32 + k];
+            }
+            for (int k = 0; k < 16; k++) {
+                input_hw[1][i * HIDDEN_DIM / 32 + j][k] = input[i][j * 32 + 16 + k];
             }
         }
     }
@@ -1530,15 +1533,16 @@ int main(int argc, char* argv[]) {
     std::cout << std::endl;
     
     // Prepare output buffer for hardware
-    std::vector<tapa::vec_t<float, 16>> output_hw(L * HIDDEN_DIM / 16);
+    std::vector<std::vector<tapa::vec_t<float, 16>>> output_hw(2, std::vector<tapa::vec_t<float, 16>>(L * HIDDEN_DIM / 32));
     std::vector<int> cycle_count_hw(1);
     
     // Initialize output buffer
-    for (int i = 0; i < output_hw.size(); i++) {
-        for (int j = 0; j < 16; j++) {
-            output_hw[i][j] = 0.0f;
-        }
-    }
+    // for (int i = 0; i < output_hw[0].size(); i++) {
+    //     for (int j = 0; j < 32; j++) {
+    //         output_hw[0][i][j] = 0.0f;
+    //         output_hw[1][i][j] = 0.0f;
+    //     }
+    // }
     cycle_count_hw[0] = 0;
     
     std::cout << "Invoking hardware..." << std::endl;
@@ -1547,15 +1551,14 @@ int main(int argc, char* argv[]) {
     tapa::invoke(
         qwen_block, FLAGS_bitstream,
         L,
-        tapa::read_only_mmap<tapa::vec_t<float, 16>>(input_hw),
+        tapa::read_only_mmaps<tapa::vec_t<float, 16>, 2>(input_hw),
         tapa::read_only_mmaps<tapa::vec_t<float, 16>, 2>(centroid_hw),
         tapa::read_only_mmaps<tapa::vec_t<ap_uint<8>, 64>, 16>(lut_weight_idx_hw),
         tapa::read_only_mmap<ap_uint<64>>(scale_zero_hw),
         tapa::read_only_mmap<tapa::vec_t<float, 16>>(sin_hw),
         tapa::read_only_mmap<tapa::vec_t<float, 16>>(cos_hw),
         tapa::read_only_mmap<tapa::vec_t<float, 16>>(rms_weight_hw),
-        tapa::write_only_mmap<tapa::vec_t<float, 16>>(output_hw),
-        tapa::write_only_mmap<int>(cycle_count_hw)
+        tapa::write_only_mmaps<tapa::vec_t<float, 16>, 2>(output_hw)
     );
     
     std::cout << "Hardware execution completed!" << std::endl;
@@ -1565,9 +1568,9 @@ int main(int argc, char* argv[]) {
     std::vector<std::vector<float>> hardware_output(L, std::vector<float>(HIDDEN_DIM));
     for (int i = 0; i < L; i++) {
         for (int j = 0; j < HIDDEN_DIM; j++) {
-            int vec_idx = (i * HIDDEN_DIM + j) / 16;
-            int elem_idx = (i * HIDDEN_DIM + j) % 16;
-            hardware_output[i][j] = output_hw[vec_idx][elem_idx];
+            int vec_idx = (i * HIDDEN_DIM + j) / 32;
+            int elem_idx = (i * HIDDEN_DIM + j) % 32;
+            hardware_output[i][j] = output_hw[elem_idx/16][vec_idx][elem_idx%16];
         }
     }
     

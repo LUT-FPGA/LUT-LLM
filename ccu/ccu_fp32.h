@@ -549,13 +549,11 @@ void input_reader(
 void input_reader_wide(
     const int L,
     tapa::async_mmap<tapa::vec_t<float, 16>>& inp,
-    tapa::ostream<tapa::vec_t<float, 16>>& input_fifo,
-    tapa::ostream<int>& L_fifo
+    tapa::ostream<tapa::vec_t<float, 16>>& input_fifo
 ) {
-    L_fifo.write(L);
-    for(int i_req = 0, i_resp = 0; i_resp < ((L * HIDDEN_DIM) >> 4);){
+    for(int i_req = 0, i_resp = 0; i_resp < ((L * HIDDEN_DIM) >> 5);){
         #pragma HLS pipeline II=1
-		if((i_req < ((L * HIDDEN_DIM) >> 4)) & !inp.read_addr.full()){
+		if((i_req < ((L * HIDDEN_DIM) >> 5)) & !inp.read_addr.full()){
             inp.read_addr.try_write(i_req);
             ++i_req;
 		}
