@@ -62,17 +62,17 @@ template <int iter = 1>
 void apply_rotary_pos_emb(
     tapa::istream<int>& L_in_fifo,
     tapa::ostream<int>& L_out_fifo,
-    tapa::istream<tapa::vec_t<float, 16>>& input_fifo,
+    tapa::istream<tapa::vec_t<float, 32>>& input_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& sin_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& cos_fifo,
-    tapa::ostream<tapa::vec_t<float, 16>>& out_fifo
+    tapa::ostream<tapa::vec_t<float, 32>>& out_fifo
 ) {
     //prefetch rope embeddings
     float sin[MAX_SEQ_LEN][HEAD_DIM];
     float cos[MAX_SEQ_LEN][HEAD_DIM];
 
-    #pragma HLS array_partition variable=sin cyclic factor=16 dim=2
-    #pragma HLS array_partition variable=cos cyclic factor=16 dim=2
+    #pragma HLS array_partition variable=sin cyclic factor=32 dim=2
+    #pragma HLS array_partition variable=cos cyclic factor=32 dim=2
 
     const int L = L_in_fifo.read();
     L_out_fifo.write(L);
@@ -96,32 +96,32 @@ void apply_rotary_pos_emb(
             #pragma HLS loop_tripcount min=32 max=128
              //read input and apply embeddings
             float input_buf_sin[HEAD_DIM];
-            #pragma HLS array_partition variable=input_buf_sin cyclic factor=16
+            #pragma HLS array_partition variable=input_buf_sin cyclic factor=32
             float input_buf_cos[HEAD_DIM];
-            #pragma HLS array_partition variable=input_buf_cos cyclic factor=16
+            #pragma HLS array_partition variable=input_buf_cos cyclic factor=32
 
-            for(int j = 0; j < (HEAD_DIM >> 4); j++){
+            for(int j = 0; j < (HEAD_DIM >> 5); j++){
                 #pragma HLS pipeline II=1
                 auto input_vec = input_fifo.read();
-                for(int k = 0; k < 16; k++){
+                for(int k = 0; k < 32; k++){
                     #pragma HLS unroll
-                    input_buf_sin[j*16+k] = input_vec[k] * sin[i][j*16+k];
-                    input_buf_cos[j*16+k] = input_vec[k] * cos[i][j*16+k];
+                    input_buf_sin[j*32+k] = input_vec[k] * sin[i][j*32+k];
+                    input_buf_cos[j*32+k] = input_vec[k] * cos[i][j*32+k];
                 }
             }
 
-            for(int j = 0; j < (HEAD_DIM >> 4); j++){
+            for(int j = 0; j < (HEAD_DIM >> 5); j++){
                 #pragma HLS pipeline II=1
-                tapa::vec_t<float, 16> out_vec;
-                if(j < (HEAD_DIM_DIV_2 >> 4)){
-                    for(int k = 0; k < 16; k++){
+                tapa::vec_t<float, 32> out_vec;
+                if(j < (HEAD_DIM_DIV_2 >> 5)){
+                    for(int k = 0; k < 32; k++){
                         #pragma HLS unroll
-                        out_vec[k] = input_buf_cos[j*16+k] - input_buf_sin[j*16+HEAD_DIM_DIV_2+k];
+                        out_vec[k] = input_buf_cos[j*32+k] - input_buf_sin[j*32+HEAD_DIM_DIV_2+k];
                     }
                 } else {
-                    for(int k = 0; k < 16; k++){
+                    for(int k = 0; k < 32; k++){
                         #pragma HLS unroll
-                        out_vec[k] = input_buf_cos[j*16+k] + input_buf_sin[j*16-HEAD_DIM_DIV_2+k];
+                        out_vec[k] = input_buf_cos[j*32+k] + input_buf_sin[j*32-HEAD_DIM_DIV_2+k];
                     }
                 }
                 out_fifo.write(out_vec);

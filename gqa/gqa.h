@@ -114,7 +114,7 @@ void pe_16x16_2x128_simd(
 void gemm_gqa_qk(
     tapa::istream<int>& L_in_fifo,
     tapa::ostream<int>& L_out_fifo,
-    tapa::istream<tapa::vec_t<float, 16>>& input_fifo,
+    tapa::istream<tapa::vec_t<float, 32>>& input_fifo,
     tapa::ostream<tapa::vec_t<float, 16>>& pre_softmax_fifo
 ) {
     // compute grouped query attention
@@ -127,18 +127,18 @@ void gemm_gqa_qk(
         // step 1: load k
         float k_buf[MAX_SEQ_LEN][HEAD_DIM];
         #pragma HLS array_partition variable=k_buf cyclic factor=16 dim=1
-        #pragma HLS array_partition variable=k_buf cyclic factor=16 dim=2
+        #pragma HLS array_partition variable=k_buf cyclic factor=32 dim=2
         #pragma HLS bind_storage variable=k_buf type=RAM_1P impl=BRAM
 
         // 16 x 16 x 16 pe array, reconfigurable to parallel group, same size
         
         load_kv: for (int i = 0; i < L; i++) {
-            for (int j = 0; j < (HEAD_DIM >> 4); j++) {
+            for (int j = 0; j < (HEAD_DIM >> 5); j++) {
                 #pragma HLS pipeline II=1
-                tapa::vec_t<float, 16> tmp = input_fifo.read(); 
-                for (int k = 0; k < 16; k++) {
+                tapa::vec_t<float, 32> tmp = input_fifo.read(); 
+                for (int k = 0; k < 32; k++) {
                     #pragma HLS unroll
-                    k_buf[i][j*16+k] = tmp[k];
+                    k_buf[i][j*32+k] = tmp[k];
                 }
             }
         }
@@ -151,50 +151,50 @@ void gemm_gqa_qk(
             for(int i = 0; i < L; i++) {
 
                 float q_buf_row[HEAD_DIM];
-                #pragma HLS array_partition variable=q_buf_row cyclic factor=16
+                #pragma HLS array_partition variable=q_buf_row cyclic factor=32
                 
                 for (int j = 0; j < (L >> 4); j++) {
                     #pragma HLS loop_tripcount min=32 max=128
 
-                    float qk_reg_row[16][16];
+                    float qk_reg_row[16][32];
                     #pragma HLS array_partition variable=qk_reg_row complete dim=1
                     #pragma HLS array_partition variable=qk_reg_row complete dim=2
 
                     init_qk: for (int k = 0; k < 16; k++) {
                         #pragma HLS unroll
-                        for (int l = 0; l < 16; l++) {
+                        for (int l = 0; l < 32; l++) {
                             #pragma HLS unroll
                             qk_reg_row[k][l] = 0.0f;
                         }
                     }
 
-                    compute_macc: for (int k = 0; k < (HEAD_DIM >> 4); k++) {
+                    compute_macc: for (int k = 0; k < (HEAD_DIM >> 5); k++) {
                         #pragma HLS pipeline II=1
-                        #pragma HLS loop_tripcount min=8 max=8
-                        
-                        tapa::vec_t<float, 16> q_vec;
+                        #pragma HLS loop_tripcount min=4 max=4
+
+                        tapa::vec_t<float, 32> q_vec;
 
                         if (j == 0){
                             // assign to q_buf
                             q_vec = input_fifo.read();
-                            for(int kk = 0; kk < 16; kk++) {
+                            for(int kk = 0; kk < 32; kk++) {
                                 #pragma HLS unroll
-                                q_buf_row[k*16+kk] = q_vec[kk];
+                                q_buf_row[k*32+kk] = q_vec[kk];
                             }
                         } else {
                             // assign to q_vec
-                            for(int kk = 0; kk < 16; kk++) {
+                            for(int kk = 0; kk < 32; kk++) {
                                 #pragma HLS unroll
-                                q_vec[kk] = q_buf_row[k*16+kk];
+                                q_vec[kk] = q_buf_row[k*32+kk];
                             }
                         }
 
                         //macc
                         for(int jj = 0; jj < 16; jj++) {
                             #pragma HLS unroll
-                            for(int kk = 0; kk < 16; kk++) {
+                            for(int kk = 0; kk < 32; kk++) {
                                 #pragma HLS unroll
-                                qk_reg_row[jj][kk] += q_vec[kk] * k_buf[j*16+jj][k*16+kk];
+                                qk_reg_row[jj][kk] += q_vec[kk] * k_buf[j*16+jj][k*32+kk];
                             }
                         }
 
@@ -203,7 +203,7 @@ void gemm_gqa_qk(
                     // reduction
                     reduction: for (int k = 1; k < 8; k++) {
                         #pragma HLS pipeline II=1
-                        for (int kk = 0; kk < 2; kk++){
+                        for (int kk = 0; kk < 4; kk++){
                             #pragma HLS unroll
                             for (int l = 0; l < 16; l++) {
                                 #pragma HLS unroll
@@ -217,7 +217,7 @@ void gemm_gqa_qk(
                     // final reduction and assignment
                     for (int k = 0; k < 16; k++) {
                         #pragma HLS unroll
-                        qk_pre_softmax[k] = (qk_reg_row[k][0] + qk_reg_row[k][8]);
+                        qk_pre_softmax[k] = (qk_reg_row[k][0] + qk_reg_row[k][8] + qk_reg_row[k][16] + qk_reg_row[k][24]);
                     }
 
                     pre_softmax_fifo.write(qk_pre_softmax);
@@ -230,9 +230,9 @@ void gemm_gqa_qk(
 void gemm_gqa_av(
     tapa::istream<int>& L_in_fifo,
     tapa::ostream<int>& L_out_fifo,
-    tapa::istream<tapa::vec_t<float, 16>>& input_fifo,
+    tapa::istream<tapa::vec_t<float, 32>>& input_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& post_softmax_fifo,
-    tapa::ostream<tapa::vec_t<float, 16>>& output_fifo
+    tapa::ostream<tapa::vec_t<float, 32>>& output_fifo
 ){
 
     const int L = L_in_fifo.read();
@@ -243,18 +243,18 @@ void gemm_gqa_av(
         // step 1: load v
         float v_buf[MAX_SEQ_LEN][HEAD_DIM];
         #pragma HLS array_partition variable=v_buf cyclic factor=16 dim=1
-        #pragma HLS array_partition variable=v_buf cyclic factor=16 dim=2
+        #pragma HLS array_partition variable=v_buf cyclic factor=32 dim=2
         #pragma HLS bind_storage variable=v_buf type=RAM_1P impl=BRAM
 
         // 16 x 16 x 16 pe array, reconfigurable to parallel group, same size
         
         load_kv: for (int i = 0; i < L; i++) {
-            for (int j = 0; j < (HEAD_DIM >> 4); j++) {
+            for (int j = 0; j < (HEAD_DIM >> 5); j++) {
                 #pragma HLS pipeline II=1
-                tapa::vec_t<float, 16> tmp = input_fifo.read(); 
-                for (int k = 0; k < 16; k++) {
+                tapa::vec_t<float, 32> tmp = input_fifo.read(); 
+                for (int k = 0; k < 32; k++) {
                     #pragma HLS unroll
-                    v_buf[i][j*16+k] = tmp[k];
+                    v_buf[i][j*32+k] = tmp[k];
                 }
             }
         }
@@ -267,15 +267,15 @@ void gemm_gqa_av(
                 float qk_buf_row[MAX_SEQ_LEN];
                 #pragma HLS array_partition variable=qk_buf_row cyclic factor=16
 
-                for (int j = 0; j < (HEAD_DIM >> 4); j++) {
+                for (int j = 0; j < (HEAD_DIM >> 5); j++) {
                     #pragma HLS dataflow
                     #pragma HLS loop_tripcount min=8 max=8
 
-                    float av_reg_row[16][16];
+                    float av_reg_row[32][16];
                     #pragma HLS array_partition variable=av_reg_row complete dim=1
                     #pragma HLS array_partition variable=av_reg_row complete dim=2
 
-                    init_qk: for (int k = 0; k < 16; k++) {
+                    init_qk: for (int k = 0; k < 32; k++) {
                         #pragma HLS unroll
                         for (int l = 0; l < 16; l++) {
                             #pragma HLS unroll
@@ -305,11 +305,11 @@ void gemm_gqa_av(
                         }
 
                         //macc
-                        for(int jj = 0; jj < 16; jj++) {
+                        for(int jj = 0; jj < 32; jj++) {
                             #pragma HLS unroll
                             for(int kk = 0; kk < 16; kk++) {
                                 #pragma HLS unroll
-                                av_reg_row[jj][kk] += qk_vec[kk] * v_buf[k*16+kk][j*16+jj];
+                                av_reg_row[jj][kk] += qk_vec[kk] * v_buf[k*16+kk][j*32+jj];
                             }
                         }
 
@@ -320,17 +320,17 @@ void gemm_gqa_av(
                         #pragma HLS pipeline II=1
                         for (int kk = 0; kk < 2; kk++){
                             #pragma HLS unroll
-                            for (int l = 0; l < 16; l++) {
+                            for (int l = 0; l < 32; l++) {
                                 #pragma HLS unroll
                                 av_reg_row[l][kk*8] += av_reg_row[l][kk*8+k];
                             }
                         }
                     }
 
-                    tapa::vec_t<float, 16> output_vec;
+                    tapa::vec_t<float, 32> output_vec;
 
                     // final reduction and assignment
-                    for (int k = 0; k < 16; k++) {
+                    for (int k = 0; k < 32; k++) {
                         #pragma HLS unroll
                         output_vec[k] = (av_reg_row[k][0] + av_reg_row[k][8]);
                     }
