@@ -207,13 +207,16 @@ void input_splitter_attn(
 }
 
 void input_splitter_final(
-    tapa::istream<int>& L_in_fifo,
+    tapa::istream<ap_uint<10>>& L_in_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& input_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& attn_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& up_gate_fifo,
     tapa::ostreams<tapa::vec_t<float, 2>, 8>& output_fifo
 ) {
-    const int L = L_in_fifo.read();
+    const ap_uint<10> L_inst = L_in_fifo.read();
+    const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
+    const int L = (L_inst[9] == 1) ? 1 : L_prefill;
+
     for (int round = 0; round < 4; round++) {
         int in_size = (round == 3) ? (INTERM_DIM_DIV_2) : (HIDDEN_DIM_DIV_2);
         for(int i = 0; i < (L * in_size >> 4); i++){
@@ -369,16 +372,19 @@ void ccu_fp32(
 
 // 4x16 branching
 void treeccu_fp32(
-    tapa::istream<int>& L_in_fifo,
-    tapa::ostream<int>& L_out_ccu_fifo,
-    tapa::ostream<int>& L_out_mm_fifo,
+    tapa::istream<ap_uint<10>>& L_in_fifo,
+    tapa::ostream<ap_uint<10>>& L_out_ccu_fifo,
+    tapa::ostream<ap_uint<10>>& L_out_mm_fifo,
     tapa::istream<tapa::vec_t<float, 2>>& inp,
     tapa::istream<tapa::vec_t<float, 2>>& centroid,
     tapa::ostream<ap_uint<8>>& idx_out
 ) {
-    const int L = L_in_fifo.read();
-    L_out_ccu_fifo.write(L);
-    L_out_mm_fifo.write(L);
+    const ap_uint<10> L_inst = L_in_fifo.read();
+    L_out_ccu_fifo.write(L_inst);
+    L_out_mm_fifo.write(L_inst);
+
+    const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
+    const int L = (L_inst[9] == 1) ? 1 : L_prefill;
 
     for(int r = 0; r < (TOTAL_CENTROID_SIZE >> 4); r++){
         #pragma HLS dataflow disable_start_propagation
@@ -547,10 +553,13 @@ void input_reader(
 }
 
 void input_reader_wide(
-    const int L,
+    const ap_uint<10> L_inst,
     tapa::async_mmap<tapa::vec_t<float, 16>>& inp,
     tapa::ostream<tapa::vec_t<float, 16>>& input_fifo
 ) {
+    const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
+    const int L = (L_inst[9] == 1) ? 1 : L_prefill;
+    
     for(int i_req = 0, i_resp = 0; i_resp < ((L * HIDDEN_DIM) >> 5);){
         #pragma HLS pipeline II=1
 		if((i_req < ((L * HIDDEN_DIM) >> 5)) & !inp.read_addr.full()){

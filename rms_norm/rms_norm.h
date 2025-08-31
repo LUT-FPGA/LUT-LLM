@@ -136,9 +136,9 @@ void rms_norm(
 }
 
 void rms_norm_cache(
-    tapa::istream<int>& L_in_fifo,
-    tapa::ostreams<int, 2>& L_out_fifo,
-    tapa::ostream<int>& L_out_ccu_fifo, 
+    tapa::istream<ap_uint<10>>& L_in_fifo,
+    tapa::ostreams<ap_uint<10>, 2>& L_out_fifo,
+    tapa::ostream<ap_uint<10>>& L_out_ccu_fifo, 
     tapa::istream<tapa::vec_t<float, 32>>& input_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& weight_fifo,
     tapa::ostreams<tapa::vec_t<float, 16>, 2>& linear_fifo,
@@ -149,10 +149,13 @@ void rms_norm_cache(
     float weight[HIDDEN_DIM];
     #pragma HLS array_partition variable=weight cyclic factor=16
 
-    const int L = L_in_fifo.read();
-    L_out_fifo[0].write(L);
-    L_out_fifo[1].write(L);
-    L_out_ccu_fifo.write(L);
+    const ap_uint<10> L_inst = L_in_fifo.read();
+    L_out_fifo[0].write(L_inst);
+    L_out_fifo[1].write(L_inst);
+    L_out_ccu_fifo.write(L_inst);
+
+    const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
+    const int L = (L_inst[9] == 1) ? 1 : L_prefill;
 
     for(int i = 0; i < (HIDDEN_DIM >> 4); i++){
         #pragma HLS pipeline II=1

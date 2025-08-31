@@ -23,6 +23,7 @@ constexpr int QK_DIM_DIV_2 = QK_DIM >> 1;
 constexpr int V_DIM = 128 * NUM_GROUPS;
 constexpr int V_DIM_DIV_2 = V_DIM >> 1;
 constexpr int HEAD_DIM = 128;
+constexpr int KV_CACHE_DIM = HEAD_DIM * NUM_GROUPS;
 constexpr int HEAD_DIM_DIV_2 = HEAD_DIM >> 1;
 constexpr int HIDDEN_DIM = 2048;
 constexpr int HIDDEN_DIM_DIV_2 = HIDDEN_DIM >> 1;

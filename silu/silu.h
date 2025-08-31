@@ -59,14 +59,17 @@ void silu_out_writer(
 }
 
 void silu(
-    tapa::istream<int>& L_in_fifo,
-    tapa::ostream<int>& L_out_fifo,
+    tapa::istream<ap_uint<10>>& L_in_fifo,
+    tapa::ostream<ap_uint<10>>& L_out_fifo,
     tapa::istream<tapa::vec_t<float, 32>>& input_fifo,
     tapa::ostream<tapa::vec_t<float, 32>>& output_fifo
 ) {
 
-    const int L = L_in_fifo.read();
-    L_out_fifo.write(L);
+    const ap_uint<10> L_inst = L_in_fifo.read();
+    L_out_fifo.write(L_inst);
+
+    const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
+    const int L = (L_inst[9] == 1) ? 1 : L_prefill;
 
     for(int r = 0; r < L; r++){
         for(int i = 0; i < (FFN_DIM >> 5); i++){

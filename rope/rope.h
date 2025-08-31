@@ -16,10 +16,14 @@
 #include "../config/config.h"
 
 void rope_input_reader(
-    const int L,
+    const ap_uint<10> L_inst,
     tapa::async_mmap<tapa::vec_t<float, 16>>& input_buffer,
     tapa::ostream<tapa::vec_t<float, 16>>& input_fifo
 ) {
+
+    const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
+    const int L = (L_inst[9] == 1) ? 1 : L_prefill;
+
     for(int i_req = 0, i_resp = 0; i_resp < ((L * HEAD_DIM) >> 4);){
         #pragma HLS pipeline II=1
         if((i_req < ((L * HEAD_DIM) >> 4)) & !input_buffer.read_addr.full()){
@@ -60,8 +64,8 @@ void rope_out_writer(
 
 template <int iter = 1>
 void apply_rotary_pos_emb(
-    tapa::istream<int>& L_in_fifo,
-    tapa::ostream<int>& L_out_fifo,
+    tapa::istream<ap_uint<10>>& L_in_fifo,
+    tapa::ostream<ap_uint<10>>& L_out_fifo,
     tapa::istream<tapa::vec_t<float, 32>>& input_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& sin_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& cos_fifo,
@@ -74,8 +78,11 @@ void apply_rotary_pos_emb(
     #pragma HLS array_partition variable=sin cyclic factor=32 dim=2
     #pragma HLS array_partition variable=cos cyclic factor=32 dim=2
 
-    const int L = L_in_fifo.read();
-    L_out_fifo.write(L);
+    const ap_uint<10> L_inst = L_in_fifo.read();
+    L_out_fifo.write(L_inst);
+
+    const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
+    const int L = (L_inst[9] == 1) ? 1 : L_prefill;
 
     for(int i = 0; i < L; i++){
         for(int j = 0; j < (HEAD_DIM >> 4); j++){

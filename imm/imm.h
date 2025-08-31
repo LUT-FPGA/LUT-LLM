@@ -119,10 +119,13 @@ void lut_weight_idx_reader(
 }
 
 void linear_out_writer(
-    const int L,
+    const ap_uint<10> L_inst,
     tapa::istream<tapa::vec_t<float, 16>>& out_fifo,
     tapa::async_mmap<tapa::vec_t<float, 16>>& linear_out_buffer
 ) {
+    const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
+    const int L = (L_inst[9] == 1) ? 1 : L_prefill;
+
     for(int i_req = 0, i_resp = 0; i_resp < ((L * HIDDEN_DIM) >> 5);){
         #pragma HLS pipeline II=1 style=stp
         if((i_req < ((L * HIDDEN_DIM) >> 5)) & !out_fifo.empty() & !linear_out_buffer.write_addr.full() & !linear_out_buffer.write_data.full()){
@@ -418,13 +421,16 @@ void memory_matcher_w_vq_half(
 }
 
 void memory_matcher_w_vq_half_final(
-    tapa::istream<int>& L_in_fifo,
+    tapa::istream<ap_uint<10>>& L_in_fifo,
     tapa::istream<idx_t>& idx_fifo,
     tapa::istream<tapa::vec_t<ap_uint<8>, 64>>& lut_weight_idx_fifo,
     tapa::istreams<tapa::vec_t<ap_uint<48>, 8>, 16>& inbound_fifo,
     tapa::ostreams<tapa::vec_t<ap_uint<48>, 8>, 16>& outbound_fifo
 ) {
-    const int L = L_in_fifo.read();
+    const ap_uint<10> L_inst = L_in_fifo.read();
+    const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
+    const int L = (L_inst[9] == 1) ? 1 : L_prefill;
+
     for (int round = 0; round < 4; round++){
     // read indices and parallel match
         const int in_size = (round == 3) ? INTERM_DIM_DIV_2 : HIDDEN_DIM_DIV_2;
@@ -708,14 +714,16 @@ void memory_matcher_w_vq_half_dsp(
 }
 
 void memory_matcher_w_vq_half_dsp_final(
-    tapa::istream<int>& L_in_fifo,
+    tapa::istream<ap_uint<10>>& L_in_fifo,
     tapa::istream<idx_t>& idx_fifo,
     tapa::istream<tapa::vec_t<ap_uint<8>, 64>>& lut_weight_idx_fifo,
     tapa::istreams<tapa::vec_t<ap_uint<48>, 8>, 16>& inbound_fifo,
     tapa::ostreams<tapa::vec_t<ap_uint<48>, 8>, 16>& outbound_fifo
 ) {
 
-    const int L = L_in_fifo.read();
+    const ap_uint<10> L_inst = L_in_fifo.read();
+    const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
+    const int L = (L_inst[9] == 1) ? 1 : L_prefill;
 
     for (int round = 0; round < 4; round++){
     // read indices and parallel match
@@ -983,13 +991,15 @@ void memory_matcher_w_vq_head_half(
 }
 
 void memory_matcher_w_vq_head_half_final(
-    tapa::istream<int>& L_in_fifo,
+    tapa::istream<ap_uint<10>>& L_in_fifo,
     tapa::istream<idx_t>& idx_fifo,
     tapa::istream<tapa::vec_t<ap_uint<8>, 64>>& lut_weight_idx_fifo,
     tapa::ostreams<tapa::vec_t<ap_uint<48>, 8>, 16>& outbound_fifo
 ) {
 
-    const int L = L_in_fifo.read();
+    const ap_uint<10> L_inst = L_in_fifo.read();
+    const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
+    const int L = (L_inst[9] == 1) ? 1 : L_prefill;
 
     for (int round = 0; round < 4; round++) {
         // read indices and parallel match

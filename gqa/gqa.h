@@ -111,34 +111,78 @@ void pe_16x16_2x128_simd(
     }
 }
 
+void kv_cache_reader(
+    const ap_uint<10> L_inst,
+    tapa::async_mmap<tapa::vec_t<float, 16>>& kv_cache_buffer,
+    tapa::ostream<tapa::vec_t<float, 16>>& kv_cache_fifo
+) {
+    const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
+    if(L_inst[9] == 1) {
+        for(int i_req = 0, i_resp = 0; i_resp < (((L_prefill-1) * KV_CACHE_DIM) >> 4);){
+            #pragma HLS pipeline II=1
+            if((i_req < (((L_prefill-1) * KV_CACHE_DIM) >> 4)) & !kv_cache_buffer.read_addr.full()){
+                kv_cache_buffer.read_addr.try_write(i_req);
+                ++i_req;
+            }
+            if(!kv_cache_buffer.read_data.empty()){
+                tapa::vec_t<float, 16> tmp;
+                kv_cache_buffer.read_data.try_read(tmp);
+                kv_cache_fifo.write(tmp);
+                ++i_resp;
+            }
+        }
+    }
+}
+
 void gemm_gqa_qk(
-    tapa::istream<int>& L_in_fifo,
-    tapa::ostream<int>& L_out_fifo,
+    tapa::istream<ap_uint<10>>& L_in_fifo,
+    tapa::ostream<ap_uint<10>>& L_out_fifo,
+    tapa::istream<tapa::vec_t<float, 16>>& k_cache_fifo,
     tapa::istream<tapa::vec_t<float, 32>>& input_fifo,
     tapa::ostream<tapa::vec_t<float, 16>>& pre_softmax_fifo
 ) {
     // compute grouped query attention
 
-    const int L = L_in_fifo.read();
-    L_out_fifo.write(L);
+    const ap_uint<10> L_inst = L_in_fifo.read();
+    L_out_fifo.write(L_inst);
+
+    const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
+    const int L = (L_inst[9] == 1) ? 1 : L_prefill;
+
+    float k_buf[MAX_SEQ_LEN][KV_CACHE_DIM];
+    #pragma HLS array_partition variable=k_buf cyclic factor=16 dim=1
+    #pragma HLS array_partition variable=k_buf cyclic factor=32 dim=2
+    #pragma HLS bind_storage variable=k_buf type=RAM_1P impl=BRAM
+
+    if(L_inst[9] == 1) {
+        // load kv cache
+        for (int i = 0; i < (L_prefill-1); i++) {
+            for (int j = 0; j < (KV_CACHE_DIM >> 4); j++) {
+                #pragma HLS pipeline II=1
+                tapa::vec_t<float, 16> tmp = k_cache_fifo.read(); 
+                for (int k = 0; k < 16; k++) {
+                    #pragma HLS unroll
+                    k_buf[i][j*16+k] = tmp[k];
+                }
+            }
+        }
+    }
 
     for (int g = 0; g < NUM_GROUPS; g++){ // groups
 
         // step 1: load k
-        float k_buf[MAX_SEQ_LEN][HEAD_DIM];
-        #pragma HLS array_partition variable=k_buf cyclic factor=16 dim=1
-        #pragma HLS array_partition variable=k_buf cyclic factor=32 dim=2
-        #pragma HLS bind_storage variable=k_buf type=RAM_1P impl=BRAM
 
         // 16 x 16 x 16 pe array, reconfigurable to parallel group, same size
-        
+        const int offset = g * HEAD_DIM;
+
         load_kv: for (int i = 0; i < L; i++) {
+            const int acc_idx = (L_inst[9] == 0) ? i : (L_prefill-1);
             for (int j = 0; j < (HEAD_DIM >> 5); j++) {
                 #pragma HLS pipeline II=1
                 tapa::vec_t<float, 32> tmp = input_fifo.read(); 
                 for (int k = 0; k < 32; k++) {
                     #pragma HLS unroll
-                    k_buf[i][j*32+k] = tmp[k];
+                    k_buf[acc_idx][offset+j*32+k] = tmp[k];
                 }
             }
         }
@@ -153,7 +197,7 @@ void gemm_gqa_qk(
                 float q_buf_row[HEAD_DIM];
                 #pragma HLS array_partition variable=q_buf_row cyclic factor=32
                 
-                for (int j = 0; j < (L >> 4); j++) {
+                for (int j = 0; j < (L_prefill >> 4); j++) {
                     #pragma HLS loop_tripcount min=32 max=128
 
                     float qk_reg_row[16][32];
@@ -194,7 +238,7 @@ void gemm_gqa_qk(
                             #pragma HLS unroll
                             for(int kk = 0; kk < 32; kk++) {
                                 #pragma HLS unroll
-                                qk_reg_row[jj][kk] += q_vec[kk] * k_buf[j*16+jj][k*32+kk];
+                                qk_reg_row[jj][kk] += q_vec[kk] * k_buf[j*16+jj][offset+k*32+kk];
                             }
                         }
 
@@ -228,33 +272,54 @@ void gemm_gqa_qk(
 }
 
 void gemm_gqa_av(
-    tapa::istream<int>& L_in_fifo,
-    tapa::ostream<int>& L_out_fifo,
+    tapa::istream<ap_uint<10>>& L_in_fifo,
+    tapa::ostream<ap_uint<10>>& L_out_fifo,
+    tapa::istream<tapa::vec_t<float, 16>>& v_cache_fifo,
     tapa::istream<tapa::vec_t<float, 32>>& input_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& post_softmax_fifo,
     tapa::ostream<tapa::vec_t<float, 32>>& output_fifo
 ){
 
-    const int L = L_in_fifo.read();
-    L_out_fifo.write(L);
+    const ap_uint<10> L_inst = L_in_fifo.read();
+    L_out_fifo.write(L_inst);
+
+    const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
+    const int L = (L_inst[9] == 1) ? 1 : L_prefill;
+
+    float v_buf[MAX_SEQ_LEN][KV_CACHE_DIM];
+    #pragma HLS array_partition variable=v_buf cyclic factor=16 dim=1
+    #pragma HLS array_partition variable=v_buf cyclic factor=32 dim=2
+    #pragma HLS bind_storage variable=v_buf type=RAM_1P impl=BRAM
+
+    if(L_inst[9] == 1) {
+        // load kv cache
+        for (int i = 0; i < (L_prefill-1); i++) {
+            for (int j = 0; j < (KV_CACHE_DIM >> 4); j++) {
+                #pragma HLS pipeline II=1
+                tapa::vec_t<float, 16> tmp = v_cache_fifo.read(); 
+                for (int k = 0; k < 16; k++) {
+                    #pragma HLS unroll
+                    v_buf[i][j*16+k] = tmp[k];
+                }
+            }
+        }
+    }
 
     for (int g = 0; g < NUM_GROUPS; g++){ // groups
 
         // step 1: load v
-        float v_buf[MAX_SEQ_LEN][HEAD_DIM];
-        #pragma HLS array_partition variable=v_buf cyclic factor=16 dim=1
-        #pragma HLS array_partition variable=v_buf cyclic factor=32 dim=2
-        #pragma HLS bind_storage variable=v_buf type=RAM_1P impl=BRAM
 
         // 16 x 16 x 16 pe array, reconfigurable to parallel group, same size
-        
+        const int offset = g * HEAD_DIM;
+
         load_kv: for (int i = 0; i < L; i++) {
+            const int acc_idx = (L_inst[9] == 0) ? i : (L_prefill-1);
             for (int j = 0; j < (HEAD_DIM >> 5); j++) {
                 #pragma HLS pipeline II=1
                 tapa::vec_t<float, 32> tmp = input_fifo.read(); 
                 for (int k = 0; k < 32; k++) {
                     #pragma HLS unroll
-                    v_buf[i][j*32+k] = tmp[k];
+                    v_buf[acc_idx][offset+j*32+k] = tmp[k];
                 }
             }
         }
@@ -283,7 +348,7 @@ void gemm_gqa_av(
                         }
                     }
 
-                    compute_macc: for (int k = 0; k < (L >> 4); k++) {
+                    compute_macc: for (int k = 0; k < (L_prefill >> 4); k++) {
                         #pragma HLS pipeline II=1
                         #pragma HLS loop_tripcount min=2 max=8
                         
@@ -309,7 +374,7 @@ void gemm_gqa_av(
                             #pragma HLS unroll
                             for(int kk = 0; kk < 16; kk++) {
                                 #pragma HLS unroll
-                                av_reg_row[jj][kk] += qk_vec[kk] * v_buf[k*16+kk][j*32+jj];
+                                av_reg_row[jj][kk] += qk_vec[kk] * v_buf[k*16+kk][offset+j*32+jj];
                             }
                         }
 
@@ -343,14 +408,17 @@ void gemm_gqa_av(
 }
 
 void softmax(
-    tapa::istream<int>& L_in_fifo,
-    tapa::ostream<int>& L_out_fifo,
+    tapa::istream<ap_uint<10>>& L_in_fifo,
+    tapa::ostream<ap_uint<10>>& L_out_fifo,
     tapa::istream<tapa::vec_t<float, 16>>& pre_softmax_fifo,
     tapa::ostream<tapa::vec_t<float, 16>>& post_softmax_fifo
 ) {
 
-    const int L = L_in_fifo.read();
-    L_out_fifo.write(L);
+    const ap_uint<10> L_inst = L_in_fifo.read();
+    L_out_fifo.write(L_inst);
+
+    const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
+    const int L = (L_inst[9] == 1) ? 1 : L_prefill; 
 
     for(int g = 0; g < NUM_GROUPS; g++) {
         for (int r = 0; r < HEAD_PER_GROUP; r++) {
@@ -362,7 +430,7 @@ void softmax(
                 #pragma HLS array_partition variable=softmax_buf cyclic factor=16 dim=1
                 float sum = 0.0f;
 
-                exp_sum: for (int j = 0; j < (L>>4); j++) {
+                exp_sum: for (int j = 0; j < (L_prefill >> 4); j++) {
                     #pragma HLS pipeline II=1
                     tapa::vec_t<float, 16> pre_softmax_vec = pre_softmax_fifo.read();
                     float exp_buf[16];
@@ -371,8 +439,8 @@ void softmax(
                     for (int k = 0; k < 16; k++) {
                         #pragma HLS unroll
                         int col = j * 16 + k;
-                        float exp_val = std::exp((float)pre_softmax_vec[k] * (float)0.125);
-                        if (i < col) exp_val = 0.0f; // zero out upper triangular part
+                        float exp_val = std::exp((float)pre_softmax_vec[k] * (float)0.0883883476);
+                        if (i < col && L_inst[9] != 1) exp_val = 0.0f; // zero out upper triangular part
                         softmax_buf[col] = exp_val;
                         exp_buf[k] = exp_val;
                     }
@@ -399,7 +467,7 @@ void softmax(
 
                 sum = 1.0 / sum; // compute the inverse of the sum
 
-                send_exp: for (int j = 0; j < (L>>4); j++) {
+                send_exp: for (int j = 0; j < (L_prefill >> 4); j++) {
                     #pragma HLS pipeline II=1
                     #pragma HLS loop_tripcount min=2 max=8
                     tapa::vec_t<float, 16> post_softmax_vec;
