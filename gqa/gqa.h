@@ -111,13 +111,15 @@ void pe_16x16_2x128_simd(
     }
 }
 
-void kv_cache_reader(
+// TODO: need to write when prefill and read when decode
+void kv_cache_readwriter(
     const ap_uint<10> L_inst,
     tapa::async_mmap<tapa::vec_t<float, 16>>& kv_cache_buffer,
+    tapa::istream<tapa::vec_t<float, 16>>& kv_cache_in_fifo,
     tapa::ostream<tapa::vec_t<float, 16>>& kv_cache_fifo
 ) {
     const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
-    if(L_inst[9] == 1) {
+    if(L_inst[9] == 1) { // decoding
         for(int i_req = 0, i_resp = 0; i_resp < (((L_prefill-1) * KV_CACHE_DIM) >> 4);){
             #pragma HLS pipeline II=1
             if((i_req < (((L_prefill-1) * KV_CACHE_DIM) >> 4)) & !kv_cache_buffer.read_addr.full()){
@@ -129,6 +131,76 @@ void kv_cache_reader(
                 kv_cache_buffer.read_data.try_read(tmp);
                 kv_cache_fifo.write(tmp);
                 ++i_resp;
+            }
+        }
+        for(int i_req = 0, i_resp = 0; i_resp < ((KV_CACHE_DIM) >> 4);){ // write one token kv cache
+            #pragma HLS pipeline II=1
+            if((i_req < ((KV_CACHE_DIM) >> 4)) & !kv_cache_in_fifo.empty() & !kv_cache_buffer.write_addr.full() & !kv_cache_buffer.write_data.full()){
+                kv_cache_buffer.write_addr.try_write(i_req);
+                tapa::vec_t<float, 16> tmp; kv_cache_in_fifo.try_read(tmp);
+                kv_cache_buffer.write_data.try_write(tmp);
+                ++i_req;
+            }
+            bool success = false;
+            auto resp = kv_cache_buffer.write_resp.read(success);
+            if(success){
+                i_resp += unsigned(resp)+1;
+            }
+        }
+    } else {
+        for(int i_req = 0, i_resp = 0; i_resp < ((L_prefill * KV_CACHE_DIM) >> 4);){
+            #pragma HLS pipeline II=1
+            if((i_req < ((L_prefill * KV_CACHE_DIM) >> 4)) & !kv_cache_in_fifo.empty() & !kv_cache_buffer.write_addr.full() & !kv_cache_buffer.write_data.full()){
+                kv_cache_buffer.write_addr.try_write(i_req);
+                tapa::vec_t<float, 16> tmp; kv_cache_in_fifo.try_read(tmp);
+                kv_cache_buffer.write_data.try_write(tmp);
+                ++i_req;
+            }
+            bool success = false;
+            auto resp = kv_cache_buffer.write_resp.read(success);
+            if(success){
+                i_resp += unsigned(resp)+1;
+            }
+        }
+    }
+}
+
+void kv_cache_transmitter(
+    const ap_uint<10> L_inst,
+    tapa::istream<tapa::vec_t<float, 32>>& k_in_fifo,
+    tapa::ostream<tapa::vec_t<float, 32>>& k_out_fifo,
+    tapa::istream<tapa::vec_t<float, 32>>& v_in_fifo,
+    tapa::ostream<tapa::vec_t<float, 32>>& v_out_fifo,
+    tapa::ostreams<tapa::vec_t<float, 16>, 2>& kv_cache_out_fifo
+) {
+    const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
+    const int L = (L_inst[9] == 1) ? 1 : L_prefill;
+
+    for (int h = 0; h < TOTAL_HEADS; h++) {
+        for(int i = 0; i < L; i++) {
+            for(int j = 0; j < (HEAD_DIM >> 5); j++) {
+                #pragma HLS pipeline II=1
+                tapa::vec_t<float, 32> tmp;
+                if ((h % (HEAD_PER_GROUP + 2)) == 0) {
+                    tmp = v_in_fifo.read();
+                    v_out_fifo.write(tmp);
+                } else {
+                    tmp = k_in_fifo.read();
+                    k_out_fifo.write(tmp);
+                }
+
+                if ((h % (HEAD_PER_GROUP + 2)) < 2) {
+                    // write to kv cache
+                    for (int c = 0; c < 2; c++) {
+                        #pragma HLS unroll
+                        tapa::vec_t<float, 16> tmp16;
+                        for (int k = 0; k < 16; k++) {
+                            #pragma HLS unroll
+                            tmp16[k] = tmp[c*16+k];
+                        }
+                        kv_cache_out_fifo[c].write(tmp16);
+                    }
+                }
             }
         }
     }
@@ -149,7 +221,7 @@ void gemm_gqa_qk(
     const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
     const int L = (L_inst[9] == 1) ? 1 : L_prefill;
 
-    float k_buf[MAX_SEQ_LEN][KV_CACHE_DIM];
+    float k_buf[MAX_KV_LEN][KV_CACHE_DIM];
     #pragma HLS array_partition variable=k_buf cyclic factor=16 dim=1
     #pragma HLS array_partition variable=k_buf cyclic factor=32 dim=2
     #pragma HLS bind_storage variable=k_buf type=RAM_1P impl=BRAM
@@ -286,7 +358,7 @@ void gemm_gqa_av(
     const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
     const int L = (L_inst[9] == 1) ? 1 : L_prefill;
 
-    float v_buf[MAX_SEQ_LEN][KV_CACHE_DIM];
+    float v_buf[MAX_KV_LEN][KV_CACHE_DIM];
     #pragma HLS array_partition variable=v_buf cyclic factor=16 dim=1
     #pragma HLS array_partition variable=v_buf cyclic factor=32 dim=2
     #pragma HLS bind_storage variable=v_buf type=RAM_1P impl=BRAM
@@ -329,7 +401,7 @@ void gemm_gqa_av(
             // step 3: write batch of rows for softmax and compute AV
             for (int i = 0; i < L; i++) {
 
-                float qk_buf_row[MAX_SEQ_LEN];
+                float qk_buf_row[MAX_KV_LEN];
                 #pragma HLS array_partition variable=qk_buf_row cyclic factor=16
 
                 for (int j = 0; j < (HEAD_DIM >> 5); j++) {
@@ -426,7 +498,7 @@ void softmax(
                 #pragma HLS dataflow
                 #pragma HLS loop_tripcount min=32 max=128
 
-                float softmax_buf[MAX_SEQ_LEN];
+                float softmax_buf[MAX_KV_LEN];
                 #pragma HLS array_partition variable=softmax_buf cyclic factor=16 dim=1
                 float sum = 0.0f;
 

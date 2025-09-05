@@ -1594,8 +1594,8 @@ int main(int argc, char* argv[]) {
     tapa::invoke(
         qwen_block, FLAGS_bitstream,
         L_hw,
-        tapa::read_only_mmap<tapa::vec_t<float, 16>>(k_cache_hw),
-        tapa::read_only_mmap<tapa::vec_t<float, 16>>(v_cache_hw),
+        tapa::read_write_mmap<tapa::vec_t<float, 16>>(k_cache_hw),
+        tapa::read_write_mmap<tapa::vec_t<float, 16>>(v_cache_hw),
         tapa::read_only_mmaps<tapa::vec_t<float, 16>, 2>(input_hw),
         tapa::read_only_mmaps<tapa::vec_t<float, 16>, 2>(centroid_hw),
         tapa::read_only_mmaps<tapa::vec_t<ap_uint<8>, 64>, 16>(lut_weight_idx_hw),

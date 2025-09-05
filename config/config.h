@@ -10,6 +10,7 @@
 #include <limits>
 
 constexpr int MAX_SEQ_LEN = 128;
+constexpr int MAX_KV_LEN = 256;
 constexpr int MAX_SEQ_LEN_MUL_2 = MAX_SEQ_LEN * 2;
 constexpr int MAX_OUT_SIZE = 6144 * 2;
 constexpr int MAX_OUT_SIZE_DIV_2 = MAX_OUT_SIZE >> 1;

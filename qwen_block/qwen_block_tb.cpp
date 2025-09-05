@@ -279,7 +279,7 @@ void reference_grouped_query_attention(
                 for (int d = 0; d < HEAD_DIM; d++) {
                     dot_product += q_heads[i][h][d] * k_heads[j][group_idx][d];
                 }
-                scores[i][j] = dot_product * 0.125f;  // Scale factor from hardware
+                scores[i][j] = dot_product * 0.0883883476f;  // Scale factor from hardware
             }
         }
 
@@ -342,6 +342,8 @@ int main(int argc, char* argv[]) {
     std::uniform_real_distribution<float> input_dis(-0.2f, 0.2f);
     std::uniform_real_distribution<float> norm_weight_dis(0.5f, 1.5f);
     std::uniform_int_distribution<int> weight_idx_dis(0, num_weight_centroids - 1);
+
+    const ap_uint<10> L_hw = ap_uint<10>((ap_uint<1>(0), ap_uint<9>(L)));
     
     // Generate random input
     std::cout << "Generating random input..." << std::endl;
@@ -1546,11 +1548,16 @@ int main(int argc, char* argv[]) {
     cycle_count_hw[0] = 0;
     
     std::cout << "Invoking hardware..." << std::endl;
-    
+
+    std::vector<tapa::vec_t<float, 16>> k_cache_hw(L * HIDDEN_DIM / 32);
+    std::vector<tapa::vec_t<float, 16>> v_cache_hw(L * HIDDEN_DIM / 32);
+
     // Hardware invocation
     tapa::invoke(
         qwen_block, FLAGS_bitstream,
-        L,
+        L_hw,
+        tapa::read_write_mmap<tapa::vec_t<float, 16>>(k_cache_hw),
+        tapa::read_write_mmap<tapa::vec_t<float, 16>>(v_cache_hw),
         tapa::read_only_mmaps<tapa::vec_t<float, 16>, 2>(input_hw),
         tapa::read_only_mmaps<tapa::vec_t<float, 16>, 2>(centroid_hw),
         tapa::read_only_mmaps<tapa::vec_t<ap_uint<8>, 64>, 16>(lut_weight_idx_hw),
