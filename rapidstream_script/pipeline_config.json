@@ -1,0 +1,7 @@
+{
+  "pp_scheme": "double",
+  "max_seconds": 60,
+  "max_workers": 4,
+  "pipeline_data_of_intra_slot_fifo": false,
+  "nets_pre_assigned": {}
+}

@@ -61,7 +61,7 @@ def LUTLinear(
     dPE_lat = 1 + np.log2(vec_len)
     CCU_dsp = dPE_dsp * n_centroids * (data_bw // (vec_len * act_bit // 8)) / CCU_reload_factor / sub_per_dsp
     CCU_lut = dPE_lut * n_centroids * (data_bw // (vec_len * act_bit // 8)) / CCU_reload_factor
-    CCU_lat = (dPE_lat * n_centroids + seq_len) * (dim_in * (act_bit // 8) / data_bw) * CCU_reload_factor # pipelined per CCU
+    CCU_lat = (dPE_lat * np.log2(n_centroids) + seq_len) * (dim_in * (act_bit // 8) / data_bw) * CCU_reload_factor # pipelined per CCU
     centroid_buffer_mem = n_centroids * (act_bit//8) * vec_len * (dim_in//vec_len) # 4 bytes per float
     if not fixed:
         total_mem_required = n_centroids * lut_bit//8 * (dim_in//vec_len) * dim_out
@@ -227,7 +227,8 @@ def QwenModel(
     act_bit=32, # LUTLinear: bitwidth of activation
     lut_bit=32, # LUTLinear: bitwidth of LUT
     nonlinear_para_factor=32,
-    decoding=False # whether to decode
+    decoding=False, # whether to decode
+    weight_vq=False # whether to use weight VQ
 ):
 
     model_config = (0, 0, 0, 0, seq_len * hidden_dim * 4, 0)
@@ -246,12 +247,14 @@ def QwenModel(
         gqa_share_factor = n_q_head // n_kv_head + 2
         max_memory = max_mem / gqa_share_factor
         max_memory_bank = max_bank / gqa_share_factor
+
+        data_bw_factor = 1.5 if weight_vq else 1
         
         q_proj_rope = fuse_op(
             LUTLinear(
                 vec_len, n_centroids, hidden_dim, head_dim, seq_len, 
                 max_lutl, max_memory, max_memory_bank, 
-                512 * off_chip_port * 3 / 4 / 8, parallel_acc, dsp_per_float, 
+                512 * off_chip_port * 3 / 4 / 8 * data_bw_factor, parallel_acc, dsp_per_float, 
                 fixed=False, CCU_reload_factor=CCU_reload_factor, act_bit=act_bit, lut_bit=lut_bit,
                 decoding=decoding
             ),
@@ -268,7 +271,7 @@ def QwenModel(
             LUTLinear(
                 vec_len, n_centroids, hidden_dim, head_dim, seq_len, 
                 max_lutl, max_memory, max_memory_bank, 
-                512 * off_chip_port * 3 / 4 / 8, parallel_acc, dsp_per_float, 
+                512 * off_chip_port * 3 / 4 / 8 * data_bw_factor, parallel_acc, dsp_per_float, 
                 fixed=False, CCU_reload_factor=CCU_reload_factor, act_bit=act_bit, lut_bit=lut_bit,
                 decoding=decoding
             ),
@@ -281,7 +284,7 @@ def QwenModel(
         v_proj = LUTLinear(
             vec_len, n_centroids, hidden_dim, head_dim, seq_len, 
             max_lutl, max_memory, max_memory_bank, 
-            512 * off_chip_port * 3 / 4 / 8, parallel_acc, dsp_per_float, 
+            512 * off_chip_port * 3 / 4 / 8 * data_bw_factor, parallel_acc, dsp_per_float, 
             fixed=False, CCU_reload_factor=CCU_reload_factor, act_bit=act_bit, lut_bit=lut_bit,
             decoding=decoding
         )
@@ -300,7 +303,7 @@ def QwenModel(
         out_proj = LUTLinear(
             vec_len, n_centroids, hidden_dim, hidden_dim, seq_len, 
             max_lutl, max_mem, max_bank, 
-            512 * off_chip_port * 3 / 4 / 8, parallel_acc * gqa_share_factor, dsp_per_float, 
+            512 * off_chip_port * 3 / 4 / 8 * data_bw_factor, parallel_acc * gqa_share_factor, dsp_per_float, 
             fixed=False, CCU_reload_factor=CCU_reload_factor, act_bit=act_bit, lut_bit=lut_bit,
             decoding=decoding
         )
@@ -324,7 +327,7 @@ def QwenModel(
         ffn1 = LUTLinear(
             vec_len, n_centroids, hidden_dim, intermediate_dim, seq_len, 
             max_lutl/2, max_mem/2, max_bank/2, 
-            512 * off_chip_port * 3 / 4 / 8, parallel_acc * gqa_share_factor/2, dsp_per_float, 
+            512 * off_chip_port * 3 / 4 / 8 * data_bw_factor, parallel_acc * gqa_share_factor/2, dsp_per_float, 
             fixed=False, CCU_reload_factor=CCU_reload_factor, act_bit=act_bit, lut_bit=lut_bit,
             decoding=decoding
         )
@@ -332,7 +335,7 @@ def QwenModel(
         ffn2 = LUTLinear(
             vec_len, n_centroids, hidden_dim, intermediate_dim, seq_len, 
             max_lutl/2, max_mem/2, max_bank/2, 
-            512 * off_chip_port * 3 / 4 / 8, parallel_acc * gqa_share_factor/2, dsp_per_float, 
+            512 * off_chip_port * 3 / 4 / 8 * data_bw_factor, parallel_acc * gqa_share_factor/2, dsp_per_float, 
             fixed=False, CCU_reload_factor=CCU_reload_factor, act_bit=act_bit, lut_bit=lut_bit,
             decoding=decoding
         )
@@ -346,7 +349,7 @@ def QwenModel(
         ffn3 = LUTLinear(
             vec_len, n_centroids, intermediate_dim, hidden_dim, seq_len, 
             max_lutl, max_mem, max_bank, 
-            512 * off_chip_port * 3 / 4 / 8, parallel_acc * gqa_share_factor, dsp_per_float, 
+            512 * off_chip_port * 3 / 4 / 8 * data_bw_factor, parallel_acc * gqa_share_factor, dsp_per_float, 
             fixed=False, CCU_reload_factor=CCU_reload_factor, act_bit=act_bit, lut_bit=lut_bit,
             decoding=decoding
         )
@@ -565,7 +568,7 @@ def generate_roofline_model(model_config, fpga_config, hyperparams):
         Lists of operational intensities, throughputs, and labels for plotting
     """
     # Sample different sequence lengths
-    seq_lengths = [8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768]
+    seq_lengths = [16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
     decoding_modes = [True, False]
     
     operational_intensities = []
@@ -624,25 +627,24 @@ def generate_roofline_model(model_config, fpga_config, hyperparams):
                     act_bit=hyperparams['act_bit'],
                     lut_bit=hyperparams['lut_bit'],
                     nonlinear_para_factor=hyperparams['nonlinear_para_factor'],
-                    decoding=decoding
+                    decoding=decoding,
+                    weight_vq=hyperparams['weight_vq']
                 )
                 
                 # Calculate memory access (approximate)
                 # Calculate memory access (approximate)
                 if "weight_vq" not in hyperparams or not hyperparams['weight_vq']:
                     memory_access_bytes = (
-                        ((hyperparams['n_centroids'] // hyperparams['vec_len']) * 494 * 1e6 * hyperparams['lut_bit'] * hyperparams['compress_lut_factor'] // 8) +
+                        ((hyperparams['n_centroids'] // hyperparams['vec_len']) * 2.03 * 1e9 * hyperparams['lut_bit'] * hyperparams['compress_lut_factor'] // 8) +
                         (model_config['num_hidden_layers'] * (model_config['hidden_size'] * 3 + model_config['intermediate_size']) * 
                         hyperparams['n_centroids'] * (hyperparams['act_bit'] // 8) // hyperparams['vec_len'])
                     )
                 else:
                     memory_access_bytes = (
-                        (np.log2(hyperparams['n_centroids']) * 494 * 1e6 / hyperparams['vec_len'] // 8) +
-                        (model_config['num_hidden_layers'] * (model_config['hidden_size'] * 3 + model_config['intermediate_size']) * 
+                        (np.log2(hyperparams['n_centroids']) * 2.03 * 1e9 / hyperparams['vec_len'] // 8) +
+                        (model_config['num_hidden_layers'] * (model_config['hidden_size'] * 4 + model_config['intermediate_size']) * 
                         hyperparams['n_centroids'] * (hyperparams['act_bit'] // 8)) * 2 +
-                        (model_config['num_hidden_layers'] * (model_config['hidden_size'] * 3 + model_config['intermediate_size']) * 
-                        hyperparams['n_centroids'] * hyperparams['n_centroids'] * (hyperparams['lut_bit'] // 8) * hyperparams['compress_lut_factor'] // hyperparams['vec_len'])
-                    )
+                        2.03 * 1e9)
 
                 # Skip if no memory access (avoid division by zero)
                 if memory_access_bytes == 0:
@@ -653,7 +655,7 @@ def generate_roofline_model(model_config, fpga_config, hyperparams):
                 
                 # Calculate throughput (GFLOPS/s)
                 total_data_load = memory_access_bytes
-                off_chip_latency = total_data_load / 820 / (1024 ** 3)
+                off_chip_latency = total_data_load / fpga_config['off_chip_bw'] / (1024 ** 3)
                 latency_sec = max(model_estimate[3] / 250 / 1e6, off_chip_latency)  # Convert cycles to seconds
                 if latency_sec > 0:
                     throughput = (total_ops / 1e9) / latency_sec  # GFLOPS/s
@@ -677,7 +679,7 @@ def plot_roofline_model(operational_intensities, throughputs, labels, fpga_confi
     Plot throughput vs operational intensity for different configurations.
     """
     # Create the plot
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(8, 4.3))
     
     # Plot actual performance points
     colors = plt.cm.tab10(np.linspace(0, 1, len(operational_intensities)))
@@ -696,7 +698,6 @@ def plot_roofline_model(operational_intensities, throughputs, labels, fpga_confi
     # Formatting
     plt.xlabel('Operational Intensity (OPS/Byte)', fontsize=12)
     plt.ylabel('Throughput (GFLOPS)', fontsize=12)
-    plt.title('Performance Analysis: Throughput vs Operational Intensity', fontsize=14)
     plt.grid(True, alpha=0.3)
     
     # Use log scale for better visualization
@@ -713,34 +714,34 @@ def plot_roofline_model(operational_intensities, throughputs, labels, fpga_confi
     
     # Add computational and memory rooflines
     # Computational roof: number of DSPs * 2 ops per DSP * clock frequency
-    computational_peak = dsp_count * 2 * 250 * 1e6 / 1e9  # Convert to GFLOPS
+    # computational_peak = dsp_count * 2 * 250 * 1e6 / 1e9  # Convert to GFLOPS
 
     full_speed_peak = fpga_config['dsp'] * 2 * 250 * 1e6 / 1e9  # Convert to GFLOPS
     
     # Memory bandwidth roof: 820 GB/s
-    memory_bandwidth = 820  # GB/s
-    
+    memory_bandwidth = fpga_config['off_chip_bw']  # GB/s
+
     # Create x-axis range for roofline visualization
     x_range = np.linspace(0, 1000, 1000)
     
     # Plot the roofline model
-    plt.plot(x_range, [computational_peak] * len(x_range), 'g--', linewidth=2, label=f'Used Compute Bound: {computational_peak:.1f} GFLOPS')
+    # plt.plot(x_range, [computational_peak] * len(x_range), 'g--', linewidth=2, label=f'Used Compute Bound: {computational_peak:.1f} GFLOPS')
     plt.plot(x_range, [full_speed_peak] * len(x_range), 'r--', linewidth=2, label=f'Full Speed Compute Bound: {full_speed_peak:.1f} GFLOPS')
     plt.plot(x_range, [oi * memory_bandwidth for oi in x_range], 'b--', linewidth=2, label=f'Memory Bound: {memory_bandwidth} GB/s')
     
     # Calculate and mark the ridge point (where memory bound meets compute bound)
-    ridge_point = computational_peak / memory_bandwidth
-    plt.scatter([ridge_point], [computational_peak], marker='*', color='black', s=150, zorder=10, 
+    ridge_point = full_speed_peak / memory_bandwidth
+    plt.scatter([ridge_point], [full_speed_peak], marker='*', color='black', s=150, zorder=10, 
                 label=f'Ridge Point: {ridge_point:.2f} OPS/Byte')
     
     # Add annotations
-    plt.annotate('Compute Bound Region', xy=(ridge_point*5, computational_peak*0.9), 
-                 xytext=(ridge_point*5, computational_peak*0.9), fontsize=10, color='r')
-    plt.annotate('Memory Bound Region', xy=(ridge_point*0.2, computational_peak*0.2), 
-                 xytext=(ridge_point*0.2, computational_peak*0.2), fontsize=10, color='b')
+    plt.annotate('Compute Bound', xy=(ridge_point*1.2, full_speed_peak*0.7), 
+                 xytext=(ridge_point*1.2, full_speed_peak*0.7), fontsize=14, color='r')
+    plt.annotate('Memory Bound', xy=(ridge_point*0.3, full_speed_peak*0.2), 
+                 xytext=(ridge_point*0.3, full_speed_peak*0.2), fontsize=14, color='b')
     
     plt.tight_layout()
-    plt.savefig('roofline_model.png', dpi=300, bbox_inches='tight')
+    plt.savefig('roofline_model.png', dpi=400, bbox_inches='tight')
     plt.close()
     
     print("Performance plot saved as 'roofline_model.png'")
@@ -756,12 +757,15 @@ def compare_param_settings(model_config, fpga_config, param_dir='param_settings'
     """
     
     # Get all JSON files in param_settings directory
-    param_files = glob.glob(os.path.join(param_dir, '*.json'))
-    # Sort parameter files alphabetically by filename
-    param_files.sort(key=lambda x: os.path.basename(x))
-    if not param_files:
-        print(f"No JSON files found in {param_dir}")
-        return
+    # param_files = glob.glob(os.path.join(param_dir, '*.json'))
+    # # Sort parameter files alphabetically by filename
+    # param_files.sort(key=lambda x: os.path.basename(x))
+    # if not param_files:
+    #     print(f"No JSON files found in {param_dir}")
+    #     return
+
+    param_files = ['param_settings/setting_1.json', 'param_settings/setting_w_vq.json']
+    param_names = ['Act. VQ', 'Act. + Weight VQ']
     
     # Sequence lengths to test (powers of 2 from 16 to 8192)
     seq_lengths = [2**i for i in range(4, 14)]  # 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192
@@ -782,8 +786,8 @@ def compare_param_settings(model_config, fpga_config, param_dir='param_settings'
     # Store results for each parameter file and sequence length
     results = {}
     
-    for param_file in param_files:
-        param_name = os.path.basename(param_file).replace('.json', '')
+    for param_file, param_name in zip(param_files, param_names):
+        # param_name = os.path.basename(param_file).replace('.json', '')
         hyperparams = load_config(param_file)
         results[param_name] = {
             'prefill': [],
@@ -830,7 +834,8 @@ def compare_param_settings(model_config, fpga_config, param_dir='param_settings'
                         act_bit=hyperparams['act_bit'],
                         lut_bit=hyperparams['lut_bit'],
                         nonlinear_para_factor=hyperparams['nonlinear_para_factor'],
-                        decoding=decoding
+                        decoding=decoding,
+                        weight_vq=hyperparams['weight_vq']
                     )
                     
                     # Check resources
@@ -839,20 +844,18 @@ def compare_param_settings(model_config, fpga_config, param_dir='param_settings'
                     # Calculate throughput
                     if "weight_vq" not in hyperparams or not hyperparams['weight_vq']:
                         total_data_load = (
-                            ((hyperparams['n_centroids'] // hyperparams['vec_len']) * 494 * 1e6 * hyperparams['lut_bit'] * hyperparams['compress_lut_factor'] // 8) +
+                            ((hyperparams['n_centroids'] // hyperparams['vec_len']) * 2.03 * 1e9 * hyperparams['lut_bit'] * hyperparams['compress_lut_factor'] // 8) +
                             (model_config['num_hidden_layers'] * (model_config['hidden_size'] * 3 + model_config['intermediate_size']) * 
                             hyperparams['n_centroids'] * (hyperparams['act_bit'] // 8) // hyperparams['vec_len']) +
                             spill_data_size
                         )
                     else:
                         total_data_load = (
-                            (np.log2(hyperparams['n_centroids']) * 494 * 1e6 / hyperparams['vec_len'] // 8) +
+                            (np.log2(hyperparams['n_centroids']) * 2.03 * 1e9 / hyperparams['vec_len'] // 8) +
                             (model_config['num_hidden_layers'] * (model_config['hidden_size'] * 3 + model_config['intermediate_size']) * 
                             hyperparams['n_centroids'] * (hyperparams['act_bit'] // 8)) * 2 +
-                            (model_config['num_hidden_layers'] * (model_config['hidden_size'] * 3 + model_config['intermediate_size']) * 
-                            hyperparams['n_centroids'] * hyperparams['n_centroids'] * (hyperparams['lut_bit'] // 8) * hyperparams['compress_lut_factor'] // hyperparams['vec_len'])
-                        ) + spill_data_size
-                    off_chip_latency = total_data_load / 820 / (1024 ** 3)
+                            2.03 * 1e9) + spill_data_size
+                    off_chip_latency = total_data_load / fpga_config['off_chip_bw'] / (1024 ** 3)
                     latency_sec = max(model_estimate[3] / 250 / 1e6, off_chip_latency)
                     throughput = (total_ops / 1e9) / latency_sec if latency_sec > 0 else 0
                     
@@ -869,7 +872,7 @@ def compare_param_settings(model_config, fpga_config, param_dir='param_settings'
                         results[param_name]['prefill'].append(0)
     
     #baseline
-    results['baseline'] = {
+    results['FP16'] = {
         'prefill': [],
         'decoding': [],
         'seq_lengths': seq_lengths
@@ -887,18 +890,84 @@ def compare_param_settings(model_config, fpga_config, param_dir='param_settings'
                 n_layer=model_config['num_hidden_layers'],
                 decoding=decoding
             )
-            base_latency = total_ops / 5.83 / 1e12
-            off_chip_latency = 494 * 1e6 * 4 / 820 / (1024 ** 3)
+            if not decoding:
+                base_latency = total_ops / 5.83 / 1e12
+            else:
+                base_latency = total_ops / 5.83 / 1e12 * 6.5
+            off_chip_latency = 2.03 * 1e9 * 2 / fpga_config['off_chip_bw'] / (1024 ** 3)
             latency_sec = max(base_latency, off_chip_latency)
             throughput = (total_ops / 1e9) / latency_sec if latency_sec > 0 else 0
 
             if decoding:
-                results['baseline']['decoding'].append(throughput)
+                results['FP16']['decoding'].append(throughput)
             else:
-                results['baseline']['prefill'].append(throughput)
+                results['FP16']['prefill'].append(throughput)
+    
+    #w4a8
+    results['W4A8'] = {
+        'prefill': [],
+        'decoding': [],
+        'seq_lengths': seq_lengths
+    }
+    for seq_len in seq_lengths:
+        for decoding in [False, True]:
+            # Compute operations
+            ops_breakdown, total_ops = compute_model_operations(
+                seq_len=seq_len,
+                hidden_dim=model_config['hidden_size'],
+                intermediate_dim=model_config['intermediate_size'],
+                head_dim=model_config['hidden_size'] // model_config['num_attention_heads'],
+                n_q_head=model_config['num_attention_heads'],
+                n_kv_head=model_config['num_key_value_heads'],
+                n_layer=model_config['num_hidden_layers'],
+                decoding=decoding
+            )
+            attention_ops = ops_breakdown['attention_qk'] + ops_breakdown['attention_av']
+            base_latency = (total_ops-attention_ops) / 24.96 / 1e12 + (total_ops-attention_ops) / 2 / 5.83 / 1e12 + attention_ops / 5.83 / 1e12
+            off_chip_latency = 2.03 * 1e9 / 2 / fpga_config['off_chip_bw'] / (1024 ** 3) * 3.5
+            latency_sec = max(base_latency, off_chip_latency)
+            throughput = (total_ops / 1e9) / latency_sec if latency_sec > 0 else 0
+
+            if decoding:
+                results['W4A8']['decoding'].append(throughput)
+            else:
+                results['W4A8']['prefill'].append(throughput)
+
+    #weight vq only
+    results['Weight VQ'] = {
+        'prefill': [],
+        'decoding': [],
+        'seq_lengths': seq_lengths
+    }
+    for seq_len in seq_lengths:
+        for decoding in [False, True]:
+            # Compute operations
+            ops_breakdown, total_ops = compute_model_operations(
+                seq_len=seq_len,
+                hidden_dim=model_config['hidden_size'],
+                intermediate_dim=model_config['intermediate_size'],
+                head_dim=model_config['hidden_size'] // model_config['num_attention_heads'],
+                n_q_head=model_config['num_attention_heads'],
+                n_kv_head=model_config['num_key_value_heads'],
+                n_layer=model_config['num_hidden_layers'],
+                decoding=decoding
+            )
+            attention_ops = ops_breakdown['attention_qk'] + ops_breakdown['attention_av']
+            if not decoding:
+                base_latency = total_ops / 5.6 / 1e12
+            else:
+                base_latency = (total_ops - attention_ops) / 5.6 / 1e12 * 6.5 + attention_ops / 5.6 / 1e12
+            off_chip_latency = (2.03 * 1e9 / 4 + 2.03 * 1e9 / 16) / fpga_config['off_chip_bw'] / (1024 ** 3)
+            latency_sec = max(base_latency, off_chip_latency)
+            throughput = (total_ops / 1e9) / latency_sec if latency_sec > 0 else 0
+
+            if decoding:
+                results['Weight VQ']['decoding'].append(throughput)
+            else:
+                results['Weight VQ']['prefill'].append(throughput)
 
     # Create separate plots for prefill and decoding
-    colors = plt.cm.tab10(np.linspace(0, 1, len(results)))
+    colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple']
     n_seq_lengths = len(seq_lengths)
     
     # Create prefill plot
@@ -984,20 +1053,22 @@ def compare_param_settings(model_config, fpga_config, param_dir='param_settings'
     print("Decoding parameter comparison plot saved as 'param_comparison_decoding.png'")
     
     # Also create a line plot showing throughput vs sequence length
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(8.5, 4.5))
     
+    base = results['Act. VQ']['decoding'][0]
     for i, (param_name, data) in enumerate(results.items()):
+        data['prefill'] = np.array(data['prefill']) / base
+        data['decoding'] = np.array(data['decoding']) / base
         plt.plot(seq_lengths[:len(data['prefill'])], data['prefill'], 
-                marker='o', color=colors[i], linewidth=2, markersize=8,
+                marker='o', color=colors[i], linewidth=2, markersize=6,
                 label=f'{param_name} (Prefill)')
         plt.plot(seq_lengths[:len(data['decoding'])], data['decoding'], 
-                marker='s', color=colors[i], linewidth=2, markersize=8,
+                marker='s', color=colors[i], linewidth=2, markersize=6,
                 linestyle='--', alpha=0.7,
-                label=f'{param_name} (Decoding)')
+                label=f'{param_name} (Decode)')
     
     plt.xlabel('Sequence Length', fontsize=12)
-    plt.ylabel('Throughput (GFLOPS)', fontsize=12)
-    plt.title('Throughput vs Sequence Length for Different Parameter Settings', fontsize=14)
+    plt.ylabel('Normalized Throughput', fontsize=12)
     plt.xscale('log', base=2)
     plt.yscale('log')
     plt.grid(True, alpha=0.3)
@@ -1005,7 +1076,7 @@ def compare_param_settings(model_config, fpga_config, param_dir='param_settings'
     plt.xticks(seq_lengths, [str(sl) for sl in seq_lengths])
     
     plt.tight_layout()
-    plt.savefig('throughput_vs_seqlen.png', dpi=300, bbox_inches='tight')
+    plt.savefig('throughput_vs_seqlen_final.png', dpi=400, bbox_inches='tight')
     plt.close()
     
     print("Throughput vs sequence length plot saved as 'throughput_vs_seqlen.png'")
@@ -1061,7 +1132,8 @@ def main():
         act_bit=hyperparams['act_bit'], # LUTLinear: bitwidth of activation
         lut_bit=hyperparams['lut_bit'], # LUTLinear: bitwidth of LUT
         nonlinear_para_factor=hyperparams['nonlinear_para_factor'], # factor for nonlinear operations
-        decoding=args.decoding # whether to decode
+        decoding=args.decoding, # whether to decode
+        weight_vq=hyperparams['weight_vq'] # whether to use weight VQ
     )
 
     print(f"dsp: {model_estimate[0]}, lut: {model_estimate[1]}, memory: {model_estimate[2] + model_estimate[4] + model_estimate[5]} bytes, latency: {model_estimate[3]} cycles")
@@ -1104,20 +1176,18 @@ def main():
 
     if "weight_vq" not in hyperparams or not hyperparams['weight_vq']:
         total_data_load = (
-            ((hyperparams['n_centroids'] // hyperparams['vec_len']) * 494 * 1e6 * hyperparams['lut_bit'] * hyperparams['compress_lut_factor'] // 8) +
-            (model_config['num_hidden_layers'] * (model_config['hidden_size'] * 3 + model_config['intermediate_size']) * 
+            ((hyperparams['n_centroids'] // hyperparams['vec_len']) * 2.03 * 1e9 * hyperparams['lut_bit'] * hyperparams['compress_lut_factor'] // 8) +
+            (model_config['num_hidden_layers'] * (model_config['hidden_size'] * 4 + model_config['intermediate_size']) * 
             hyperparams['n_centroids'] * (hyperparams['act_bit'] // 8) // hyperparams['vec_len']) +
             spill_data_size
         )
     else:
         total_data_load = (
-            (np.log2(hyperparams['n_centroids']) * 494 * 1e6 / hyperparams['vec_len'] // 8) +
-            (model_config['num_hidden_layers'] * (model_config['hidden_size'] * 3 + model_config['intermediate_size']) * 
+            (np.log2(hyperparams['n_centroids']) * 2.03 * 1e9 / hyperparams['vec_len'] // 8) +
+            (model_config['num_hidden_layers'] * (model_config['hidden_size'] * 4 + model_config['intermediate_size']) * 
             hyperparams['n_centroids'] * (hyperparams['act_bit'] // 8)) * 2 +
-            (model_config['num_hidden_layers'] * (model_config['hidden_size'] * 3 + model_config['intermediate_size']) * 
-            hyperparams['n_centroids'] * hyperparams['n_centroids'] * (hyperparams['lut_bit'] // 8) * hyperparams['compress_lut_factor'] // hyperparams['vec_len'])
-        ) + spill_data_size
-    off_chip_latency = total_data_load / 820 / (1024 ** 3) * 1000
+            2.03 * 1e9) + spill_data_size
+    off_chip_latency = total_data_load / fpga_config['off_chip_bw'] / (1024 ** 3) * 1000
     print(f"off-chip latency: {off_chip_latency} ms")
     print(f"on-chip latency: {model_estimate[3] / 250 / 1000} ms")
     print(f"inference latency: {max(model_estimate[3] / 250 / 1000, off_chip_latency)} ms") # 250MHz clock, assume fully overlap

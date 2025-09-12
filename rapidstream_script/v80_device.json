@@ -1,0 +1,185 @@
+{
+  "slots": [
+    {
+      "area": {
+        "lut": 432768,
+        "ff": 865536,
+        "bram_18k": 1186,
+        "dsp": 1992,
+        "uram": 344
+      },
+      "x": 0,
+      "y": 0,
+      "centroid_x_coor": 0,
+      "centroid_y_coor": 0,
+      "pblock_ranges": [
+        "-add { CLOCKREGION_X0Y0:CLOCKREGION_X4Y4 }"
+      ],
+      "north_wire_capacity": 10000,
+      "south_wire_capacity": 100000000,
+      "east_wire_capacity": 100000000,
+      "west_wire_capacity": 100000000,
+      "down_left_x": -1,
+      "down_left_y": -1,
+      "up_right_x": -1,
+      "up_right_y": -1,
+      "north_anchor_region": [],
+      "south_anchor_region": [],
+      "east_anchor_region": [],
+      "west_anchor_region": [],
+      "tags": []
+    },
+    {
+      "area": {
+        "lut": 414720,
+        "ff": 829440,
+        "bram_18k": 1104,
+        "dsp": 1728,
+        "uram": 426
+      },
+      "x": 0,
+      "y": 1,
+      "centroid_x_coor": 0,
+      "centroid_y_coor": 150,
+      "pblock_ranges": [
+        "-add { CLOCKREGION_X0Y5:CLOCKREGION_X4Y7 }"
+      ],
+      "north_wire_capacity": 10000,
+      "south_wire_capacity": 10000,
+      "east_wire_capacity": 100000000,
+      "west_wire_capacity": 100000000,
+      "down_left_x": -1,
+      "down_left_y": -1,
+      "up_right_x": -1,
+      "up_right_y": -1,
+      "north_anchor_region": [],
+      "south_anchor_region": [],
+      "east_anchor_region": [],
+      "west_anchor_region": [],
+      "tags": []
+    },
+    {
+      "area": {
+        "lut": 426624,
+        "ff": 853248,
+        "bram_18k": 1104,
+        "dsp": 1704,
+        "uram": 336
+      },
+      "x": 0,
+      "y": 2,
+      "centroid_x_coor": 0,
+      "centroid_y_coor": 300,
+      "pblock_ranges": [
+        "-add { CLOCKREGION_X0Y8:CLOCKREGION_X4Y10 }"
+      ],
+      "north_wire_capacity": 100000000,
+      "south_wire_capacity": 10000,
+      "east_wire_capacity": 100000000,
+      "west_wire_capacity": 100000000,
+      "down_left_x": -1,
+      "down_left_y": -1,
+      "up_right_x": -1,
+      "up_right_y": -1,
+      "north_anchor_region": [],
+      "south_anchor_region": [],
+      "east_anchor_region": [],
+      "west_anchor_region": [],
+      "tags": []
+    },
+    {
+      "area": {
+        "lut": 467456,
+        "ff": 934912,
+        "bram_18k": 1496,
+        "dsp": 1992,
+        "uram": 333
+      },
+      "x": 1,
+      "y": 0,
+      "centroid_x_coor": 100,
+      "centroid_y_coor": 0,
+      "pblock_ranges": [
+        "-add { CLOCKREGION_X5Y0:CLOCKREGION_X9Y4 }"
+      ],
+      "north_wire_capacity": 10000,
+      "south_wire_capacity": 100000000,
+      "east_wire_capacity": 100000000,
+      "west_wire_capacity": 100000000,
+      "down_left_x": -1,
+      "down_left_y": -1,
+      "up_right_x": -1,
+      "up_right_y": -1,
+      "north_anchor_region": [],
+      "south_anchor_region": [],
+      "east_anchor_region": [],
+      "west_anchor_region": [],
+      "tags": []
+    },
+    {
+      "area": {
+        "lut": 405504,
+        "ff": 811008,
+        "bram_18k": 1296,
+        "dsp": 1728,
+        "uram": 288
+      },
+      "x": 1,
+      "y": 1,
+      "centroid_x_coor": 100,
+      "centroid_y_coor": 150,
+      "pblock_ranges": [
+        "-add { CLOCKREGION_X5Y5:CLOCKREGION_X9Y7 }"
+      ],
+      "north_wire_capacity": 10000,
+      "south_wire_capacity": 10000,
+      "east_wire_capacity": 100000000,
+      "west_wire_capacity": 100000000,
+      "down_left_x": -1,
+      "down_left_y": -1,
+      "up_right_x": -1,
+      "up_right_y": -1,
+      "north_anchor_region": [],
+      "south_anchor_region": [],
+      "east_anchor_region": [],
+      "west_anchor_region": [],
+      "tags": []
+    },
+    {
+      "area": {
+        "lut": 427136,
+        "ff": 854272,
+        "bram_18k": 1296,
+        "dsp": 1704,
+        "uram": 288
+      },
+      "x": 1,
+      "y": 2,
+      "centroid_x_coor": 100,
+      "centroid_y_coor": 300,
+      "pblock_ranges": [
+        "-add { CLOCKREGION_X5Y8:CLOCKREGION_X9Y10 }"
+      ],
+      "north_wire_capacity": 100000000,
+      "south_wire_capacity": 10000,
+      "east_wire_capacity": 100000000,
+      "west_wire_capacity": 100000000,
+      "down_left_x": -1,
+      "down_left_y": -1,
+      "up_right_x": -1,
+      "up_right_y": -1,
+      "north_anchor_region": [],
+      "south_anchor_region": [],
+      "east_anchor_region": [],
+      "west_anchor_region": [],
+      "tags": []
+    }
+  ],
+  "rows": 3,
+  "cols": 2,
+  "pp_dist": 100,
+  "part_num": "xcv80-lsva4737-2MHP-e-S",
+  "board_name": null,
+  "platform_name": null,
+  "user_pblock_name": null
+}

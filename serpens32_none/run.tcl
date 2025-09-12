@@ -19,6 +19,7 @@ proc import_ips_from_dir {dir} {
 create_project vivado_proj serpens32_none/vivado_proj -part xcv80-lsva4737-2MHP-e-S
 import_ips_from_dir serpens32_none/rtl/
 import_files serpens32_none/rtl/
+import_files serpens32_none/floorplan.xdc
 
 # set_property SOURCE_SET sources_1 [get_filesets sim_1]
 # import_files -fileset sim_1 -norecurse serpens32_none/tb.sv
@@ -49,8 +50,10 @@ wait_on_run synth_1
 # open_project serpens32_none/vivado_proj/vivado_proj.xpr
 # reset_run impl_1 -prev_step 
 set_property -name {STEPS.PHYS_OPT_DESIGN.IS_ENABLED}     -value {1}     -objects [get_runs impl_1]
+set_property -name {STEPS.POST_ROUTE_PHYS_OPT_DESIGN.IS_ENABLED}     -value {1}     -objects [get_runs impl_1]
 set_property -name {STEPS.OPT_DESIGN.ARGS.DIRECTIVE}     -value {Explore}     -objects [get_runs impl_1]
 set_property -name {STEPS.PLACE_DESIGN.ARGS.DIRECTIVE}     -value {Explore}     -objects [get_runs impl_1]
+set_property -name {STEPS.PLACE_DESIGN.ARGS.SUBDIRECTIVE}  -value {Floorplan.ExtraTimingUpdate Floorplan.ExtraTimingOpt.high GPlace.ExtraTimingUpdate GPlace.ExtraTimingOpt.high DPlace.ExtraTimingUpdate DPlace.ExtraTimingOpt.high} -objects [get_runs impl_1]
 set_property -name {STEPS.PHYS_OPT_DESIGN.ARGS.DIRECTIVE}     -value {Explore}     -objects [get_runs impl_1]
 set_property -name {STEPS.ROUTE_DESIGN.ARGS.DIRECTIVE}     -value {AggressiveExplore}     -objects [get_runs impl_1]
 launch_runs impl_1 -jobs 8

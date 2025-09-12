@@ -14,10 +14,10 @@ for x in range(1):
 df.extract_slot_resources()
 
 for x in range(1):
-    df.set_slot_capacity(x, 0, north=18796)
-    df.set_slot_capacity(x, 1, north=18280)
+    df.set_slot_capacity(x, 0, north=20000)
+    df.set_slot_capacity(x, 1, north=20000)
 
-    df.set_slot_capacity(x, 1, south=18718)
-    df.set_slot_capacity(x, 2, south=18821)
+    df.set_slot_capacity(x, 1, south=20000)
+    df.set_slot_capacity(x, 2, south=20000)
 
 df.generate_virtual_device("v80_device.json")

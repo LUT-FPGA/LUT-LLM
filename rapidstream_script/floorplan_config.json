@@ -1,0 +1,15 @@
+{
+  "max_seconds": 1000,
+  "dse_range_min": 0.63,
+  "dse_range_max": 0.9,
+  "partition_strategy": "flat",
+  "port_pre_assignments": {
+    ".*": "SLOT_X0Y2:SLOT_X1Y2"
+  },
+  "grouping_constraints": [],
+  "reserved_slot_to_cells": {},
+  "partition_schedule": [],
+  "slot_to_rtype_to_min_limit": {},
+  "slot_to_rtype_to_max_limit": {},
+  "ignore_narrow_edge_threshold": 1
+}

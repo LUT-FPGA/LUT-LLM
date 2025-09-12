@@ -6,6 +6,6 @@
     "dsp": 14352,
     "off_chip_size": 12,
     "off_chip_bw": 102.4,
-    "off_chip_port": 4,
+    "off_chip_port": 32,
     "dsp_version": "dsp58"
 }
