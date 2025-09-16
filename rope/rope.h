@@ -17,8 +17,8 @@
 
 void rope_input_reader(
     const ap_uint<10> L_inst,
-    tapa::async_mmap<tapa::vec_t<float, 16>>& input_buffer,
-    tapa::ostream<tapa::vec_t<float, 16>>& input_fifo
+    tapa::async_mmap<tapa::vec_t<float, 8>>& input_buffer,
+    tapa::ostream<tapa::vec_t<float, 8>>& input_fifo
 ) {
 
     const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
@@ -31,7 +31,7 @@ void rope_input_reader(
             ++i_req;
         }
         if(!input_buffer.read_data.empty()){
-            tapa::vec_t<float, 16> tmp;
+            tapa::vec_t<float, 8> tmp;
             input_buffer.read_data.try_read(tmp);
             input_fifo.write(tmp);
             ++i_resp;
@@ -67,8 +67,8 @@ void apply_rotary_pos_emb(
     tapa::istream<ap_uint<10>>& L_in_fifo,
     tapa::ostream<ap_uint<10>>& L_out_fifo,
     tapa::istream<tapa::vec_t<float, 32>>& input_fifo,
-    tapa::istream<tapa::vec_t<float, 16>>& sin_fifo,
-    tapa::istream<tapa::vec_t<float, 16>>& cos_fifo,
+    tapa::istreams<tapa::vec_t<float, 8>, 2>& sin_fifo,
+    tapa::istreams<tapa::vec_t<float, 8>, 2>& cos_fifo,
     tapa::ostream<tapa::vec_t<float, 32>>& out_fifo
 ) {
     //prefetch rope embeddings
@@ -87,12 +87,15 @@ void apply_rotary_pos_emb(
     for(int i = 0; i < L; i++){
         for(int j = 0; j < (HEAD_DIM >> 4); j++){
             #pragma HLS pipeline II=1
-            auto sin_vec = sin_fifo.read();
-            auto cos_vec = cos_fifo.read();
-            for(int k = 0; k < 16; k++){
+            for(int c = 0; c < 2; c++){
                 #pragma HLS unroll
-                sin[i][j*16+k] = sin_vec[k];
-                cos[i][j*16+k] = cos_vec[k];
+                auto sin_vec = sin_fifo[c].read();
+                auto cos_vec = cos_fifo[c].read();
+                for(int k = 0; k < 8; k++){
+                    #pragma HLS unroll
+                    sin[i][j*16+c*8+k] = sin_vec[k];
+                    cos[i][j*16+c*8+k] = cos_vec[k];
+                }
             }
         }
     }

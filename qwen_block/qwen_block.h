@@ -19,7 +19,7 @@
 void residual_bank(
     const ap_uint<10> L_inst,
     tapa::ostream<ap_uint<10>>& L_out_fifo,
-    tapa::istreams<tapa::vec_t<float, 16>, 2>& input_fifo,
+    tapa::istreams<tapa::vec_t<float, 8>, 4>& input_fifo,
     tapa::istream<tapa::vec_t<float, 32>>& linear_in_fifo,
     tapa::ostream<tapa::vec_t<float, 32>>& norm_fifo
 ) {
@@ -37,13 +37,13 @@ void residual_bank(
         for (int j = 0; j < (HIDDEN_DIM >> 5); j++) {
             #pragma HLS pipeline II=1
             tapa::vec_t<float, 32> out_vec;
-            for(int c = 0; c < 2; c++) {
+            for(int c = 0; c < 4; c++) {
                 #pragma HLS unroll
                 auto input_vec = input_fifo[c].read();
-                for (int k = 0; k < 16; k++) {
+                for (int k = 0; k < 8; k++) {
                     #pragma HLS unroll
-                    residual_buf[i][j*32+c*16+k] = input_vec[k];
-                    out_vec[c*16+k] = input_vec[k];
+                    residual_buf[i][j*32+c*8+k] = input_vec[k];
+                    out_vec[c*8+k] = input_vec[k];
                 }
             }
             norm_fifo.write(out_vec); // write to norm fifo
@@ -313,8 +313,8 @@ void apply_rope(
     tapa::istream<ap_uint<10>>& L_in_fifo,
     tapa::ostream<ap_uint<10>>& L_out_fifo,
     tapa::istream<tapa::vec_t<float, 32>>& input_fifo,
-    tapa::istream<tapa::vec_t<float, 16>>& sin_fifo,
-    tapa::istream<tapa::vec_t<float, 16>>& cos_fifo,
+    tapa::istreams<tapa::vec_t<float, 8>, 2>& sin_fifo,
+    tapa::istreams<tapa::vec_t<float, 8>, 2>& cos_fifo,
     tapa::ostream<tapa::vec_t<float, 32>>& out_fifo
 ) {
     apply_rotary_pos_emb<NUM_ROPE_HEADS>(
@@ -374,24 +374,24 @@ void scale_zero_reader_final(
 
 void qwen_block(
     const ap_uint<10> L,
-    tapa::mmap<tapa::vec_t<float, 16>> k_cache_buffer,
-    tapa::mmap<tapa::vec_t<float, 16>> v_cache_buffer,
-    tapa::mmaps<tapa::vec_t<float, 16>, 2> input_buffer,
-    tapa::mmaps<tapa::vec_t<float, 16>, 2> centroid_buffer,
-    tapa::mmaps<tapa::vec_t<ap_uint<8>, 64>, 16> lut_weight_idx_buffer,
+    tapa::mmaps<tapa::vec_t<float, 8>, 2> k_cache_buffer,
+    tapa::mmaps<tapa::vec_t<float, 8>, 2> v_cache_buffer,
+    tapa::mmaps<tapa::vec_t<float, 8>, 4> input_buffer,
+    tapa::mmaps<tapa::vec_t<float, 8>, 4> centroid_buffer,
+    tapa::mmaps<tapa::vec_t<ap_uint<8>, 32>, 32> lut_weight_idx_buffer,
     tapa::mmap<ap_uint<64>> scale_zero_buffer,
-    tapa::mmap<tapa::vec_t<float, 16>> sin_buffer,
-    tapa::mmap<tapa::vec_t<float, 16>> cos_buffer,
-    tapa::mmap<tapa::vec_t<float, 16>> rms_norm_weight_buffer,
-    tapa::mmaps<tapa::vec_t<float, 16>, 2> out_buffer
+    tapa::mmaps<tapa::vec_t<float, 8>, 2> sin_buffer,
+    tapa::mmaps<tapa::vec_t<float, 8>, 2> cos_buffer,
+    tapa::mmaps<tapa::vec_t<float, 8>, 2> rms_norm_weight_buffer,
+    tapa::mmaps<tapa::vec_t<float, 8>, 4> out_buffer
 ) {
 
-    tapa::streams<tapa::vec_t<float, 16>, 2> input_fifo("input_fifo");
+    tapa::streams<tapa::vec_t<float, 8>, 4> input_fifo("input_fifo");
 
     tapa::streams<tapa::vec_t<float, 2>, 16> input_split_fifo("input_split_fifo");
     tapa::streams<tapa::vec_t<float, 2>, 16> centroid_fifo("centroid_fifo");
     tapa::streams<ap_uint<8>, 16, 32> idx_fifo("idx_fifo");
-    tapa::streams<tapa::vec_t<ap_uint<8>, 64>, 16> lut_weight_idx_fifo("lut_weight_idx_fifo");
+    tapa::streams<tapa::vec_t<ap_uint<8>, 32>, 32> lut_weight_idx_fifo("lut_weight_idx_fifo");
     tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 16, 8> psum_0_fifo("psum_0_fifo");
     tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 16, 8> psum_1_fifo("psum_1_fifo");
     tapa::streams<tapa::vec_t<ap_uint<48>, 8>, 16, 8> psum_2_fifo("psum_2_fifo");
@@ -411,8 +411,8 @@ void qwen_block(
     tapa::stream<ap_uint<64>> scale_zero_fifo("scale_zero_fifo");
     tapa::stream<tapa::vec_t<float, 32>> res_fifo("res_fifo");
 
-    tapa::stream<tapa::vec_t<float, 16>> sin_fifo("sin_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> cos_fifo("cos_fifo");
+    tapa::streams<tapa::vec_t<float, 8>, 2> sin_fifo("sin_fifo");
+    tapa::streams<tapa::vec_t<float, 8>, 2> cos_fifo("cos_fifo");
     tapa::stream<tapa::vec_t<float, 32>> rope_in_fifo("rope_in_fifo");
     tapa::stream<tapa::vec_t<float, 32>, 8> input_fifo_qk("input_fifo_qk");
     tapa::stream<tapa::vec_t<float, 32>, 4> input_fifo_qk_fwd("input_fifo_qk_fwd");
@@ -429,14 +429,14 @@ void qwen_block(
     tapa::stream<tapa::vec_t<float, 32>> up_out_fifo("up_out_fifo");
 
     tapa::stream<tapa::vec_t<float, 32>> norm_in_fifo("norm_in_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> norm_weight_fifo("norm_weight_fifo");
+    tapa::streams<tapa::vec_t<float, 8>, 2> norm_weight_fifo("norm_weight_fifo");
     tapa::streams<tapa::vec_t<float, 16>, 2> norm_to_splitter_fifo("norm_to_splitter_fifo");
-    tapa::streams<tapa::vec_t<float, 16>, 2> out_fifo("out_fifo");
+    tapa::streams<tapa::vec_t<float, 8>, 4> out_fifo("out_fifo");
 
     tapa::stream<tapa::vec_t<float, 32>> dist_fifo("dist_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> k_cache_fifo("k_cache_fifo");
-    tapa::streams<tapa::vec_t<float, 16>, 2> kv_cache_write_fifo("kv_cache_write_fifo");
-    tapa::stream<tapa::vec_t<float, 16>> v_cache_fifo("v_cache_fifo");
+    tapa::streams<tapa::vec_t<float, 8>, 2> k_cache_fifo("k_cache_fifo");
+    tapa::streams<tapa::vec_t<float, 8>, 4> kv_cache_write_fifo("kv_cache_write_fifo");
+    tapa::streams<tapa::vec_t<float, 8>, 2> v_cache_fifo("v_cache_fifo");
 
     // pass seq length w/ fifo
     tapa::stream<ap_uint<10>> L_res_to_rms_fifo("L_res_to_rms_fifo");
@@ -447,18 +447,18 @@ void qwen_block(
     tapa::streams<ap_uint<10>, 2> L_mm_to_silu_fifo("L_mm_to_silu_fifo");
 
     tapa::task()
-        .invoke<tapa::join, 2>(input_reader_wide, L, input_buffer, input_fifo)
-        .invoke<tapa::join>(kv_cache_readwriter, L, k_cache_buffer, kv_cache_write_fifo, k_cache_fifo)
-        .invoke<tapa::join>(kv_cache_readwriter, L, v_cache_buffer, kv_cache_write_fifo, v_cache_fifo)
-        .invoke<tapa::join>(rms_weight_reader, rms_norm_weight_buffer, norm_weight_fifo)
+        .invoke<tapa::join, 4>(input_reader_wide, L, input_buffer, input_fifo)
+        .invoke<tapa::join, 2>(kv_cache_readwriter, L, k_cache_buffer, kv_cache_write_fifo, k_cache_fifo)
+        .invoke<tapa::join, 2>(kv_cache_readwriter, L, v_cache_buffer, kv_cache_write_fifo, v_cache_fifo)
+        .invoke<tapa::join, 2>(rms_weight_reader, rms_norm_weight_buffer, norm_weight_fifo)
         .invoke<tapa::join>(residual_bank, L, L_res_to_rms_fifo, input_fifo, res_fifo, norm_in_fifo)
         .invoke<tapa::join>(rms_norm_cache, L_res_to_rms_fifo, L_rms_to_splitter_fifo, L_rms_to_ccu_fifo, norm_in_fifo, norm_weight_fifo, norm_to_splitter_fifo, out_fifo)
-        .invoke<tapa::join, 16>(lut_weight_idx_reader, lut_weight_idx_buffer, lut_weight_idx_fifo)
+        .invoke<tapa::join, 32>(lut_weight_idx_reader, lut_weight_idx_buffer, lut_weight_idx_fifo)
         .invoke<tapa::join>(scale_zero_reader_final, scale_zero_buffer, scale_zero_fifo)
-        .invoke<tapa::join>(rope_input_reader, L, sin_buffer, sin_fifo)
-        .invoke<tapa::join>(rope_input_reader, L, cos_buffer, cos_fifo)
+        .invoke<tapa::join, 2>(rope_input_reader, L, sin_buffer, sin_fifo)
+        .invoke<tapa::join, 2>(rope_input_reader, L, cos_buffer, cos_fifo)
         .invoke<tapa::join, 2>(input_splitter_final, L_rms_to_splitter_fifo, norm_to_splitter_fifo, attn_out_fifo, up_gate_fifo, input_split_fifo)
-        .invoke<tapa::join, 2>(centroid_reader_split, centroid_buffer, centroid_fifo)
+        .invoke<tapa::join, 4>(centroid_reader_split, centroid_buffer, centroid_fifo)
         .invoke<tapa::join, 16>(treeccu_fp32, L_rms_to_ccu_fifo, L_rms_to_ccu_fifo, L_ccu_to_mm_fifo, input_split_fifo, centroid_fifo, idx_fifo)
         .invoke<tapa::join>(memory_matcher_w_vq_head_half_final, L_ccu_to_mm_fifo, idx_fifo, lut_weight_idx_fifo, psum_0_fifo)
         .invoke<tapa::join>(memory_matcher_w_vq_half_dsp_final, L_ccu_to_mm_fifo, idx_fifo, lut_weight_idx_fifo, psum_0_fifo, psum_1_fifo)
@@ -486,7 +486,7 @@ void qwen_block(
         .invoke<tapa::join>(attn_cache, L_mm_to_rope_fifo, attn_cache_fifo, attn_out_fifo)
         .invoke<tapa::join>(silu, L_mm_to_silu_fifo, L_mm_to_silu_fifo, gate_before_silu_fifo, gate_after_silu_fifo)
         .invoke<tapa::join>(element_wise_mul, L_mm_to_silu_fifo, up_out_fifo, gate_after_silu_fifo, up_gate_fifo)
-        .invoke<tapa::join, 2>(linear_out_writer, L, out_fifo, out_buffer);
+        .invoke<tapa::join, 4>(linear_out_writer, L, out_fifo, out_buffer);
 
 }
 
