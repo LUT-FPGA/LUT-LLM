@@ -1535,7 +1535,7 @@ int main(int argc, char* argv[]) {
     std::cout << std::endl;
     
     // Prepare output buffer for hardware
-    std::vector<std::vector<tapa::vec_t<float, 8>>> output_hw(4, std::vector<tapa::vec_t<float, 8>>(L * HIDDEN_DIM / 32));
+    std::vector<std::vector<tapa::vec_t<float, 16>>> output_hw(2, std::vector<tapa::vec_t<float, 16>>(L * HIDDEN_DIM / 32));
     std::vector<int> cycle_count_hw(1);
     
     // Initialize output buffer
@@ -1552,114 +1552,20 @@ int main(int argc, char* argv[]) {
     std::vector<tapa::vec_t<float, 16>> k_cache_hw(L * HIDDEN_DIM / 32);
     std::vector<tapa::vec_t<float, 16>> v_cache_hw(L * HIDDEN_DIM / 32);
 
-    // split 512 -> 2x256
-    std::vector<std::vector<tapa::vec_t<float, 8>>> k_cache_hw_arr(2, std::vector<tapa::vec_t<float, 8>>(L * HIDDEN_DIM / 32));
-    std::vector<std::vector<tapa::vec_t<float, 8>>> v_cache_hw_arr(2, std::vector<tapa::vec_t<float, 8>>(L * HIDDEN_DIM / 32));
-
-    std::vector<std::vector<tapa::vec_t<float, 8>>> input_hw_arr(4);
-    for(int i = 0; i < 2; i++){
-        for(int j = 0; j < input_hw[0].size(); j++){
-            tapa::vec_t<float, 8> op1;
-            tapa::vec_t<float, 8> op2;
-            for(int k = 0; k < 8; k++){
-                op1[k] = input_hw[i][j][k];
-            }
-            for(int k = 0; k < 8; k++){
-                op2[k] = input_hw[i][j][k+8];
-            }
-            input_hw_arr[i*2].push_back(op1);
-            input_hw_arr[i*2+1].push_back(op2);
-        }
-    }
-
-    std::vector<std::vector<tapa::vec_t<float, 8>>> centroid_hw_arr(4);
-    for(int i = 0; i < 2; i++){
-        for(int j = 0; j < centroid_hw[0].size(); j++){
-            tapa::vec_t<float, 8> op1;
-            tapa::vec_t<float, 8> op2;
-            for(int k = 0; k < 8; k++){
-                op1[k] = centroid_hw[i][j][k];
-            }
-            for(int k = 0; k < 8; k++){
-                op2[k] = centroid_hw[i][j][k+8];
-            }
-            centroid_hw_arr[i*2].push_back(op1);
-            centroid_hw_arr[i*2+1].push_back(op2);
-        }
-    }
-
-    std::vector<std::vector<tapa::vec_t<ap_uint<8>, 32>>> lut_weight_idx_hw_arr(32);
-    for(int i = 0; i < 16; i++){
-        for(int j = 0; j < lut_weight_idx_hw[0].size(); j++){
-            tapa::vec_t<ap_uint<8>, 32> op1;
-            tapa::vec_t<ap_uint<8>, 32> op2;
-            for(int k = 0; k < 32; k++){
-                op1[k] = lut_weight_idx_hw[i][j][k];
-            }
-            for(int k = 0; k < 32; k++){
-                op2[k] = lut_weight_idx_hw[i][j][k+32];
-            }
-            lut_weight_idx_hw_arr[i*2].push_back(op1);
-            lut_weight_idx_hw_arr[i*2+1].push_back(op2);
-        }
-    }
-
-    std::vector<std::vector<tapa::vec_t<float, 8>>> sin_hw_arr(2);
-    for(int j = 0; j < sin_hw.size(); j++){
-        tapa::vec_t<float, 8> op1;
-        tapa::vec_t<float, 8> op2;
-        for(int k = 0; k < 8; k++){
-            op1[k] = sin_hw[j][k];
-        }
-        for(int k = 0; k < 8; k++){
-            op2[k] = sin_hw[j][k+8];
-        }
-        sin_hw_arr[0].push_back(op1);
-        sin_hw_arr[1].push_back(op2);
-    }
-
-    std::vector<std::vector<tapa::vec_t<float, 8>>> cos_hw_arr(2);
-    for(int j = 0; j < cos_hw.size(); j++){
-        tapa::vec_t<float, 8> op1;
-        tapa::vec_t<float, 8> op2;
-        for(int k = 0; k < 8; k++){
-            op1[k] = cos_hw[j][k];
-        }
-        for(int k = 0; k < 8; k++){
-            op2[k] = cos_hw[j][k+8];
-        }
-        cos_hw_arr[0].push_back(op1);
-        cos_hw_arr[1].push_back(op2);
-    }
-
-    std::vector<std::vector<tapa::vec_t<float, 8>>> rms_weight_hw_arr(2);
-    for(int j = 0; j < rms_weight_hw.size(); j++){
-        tapa::vec_t<float, 8> op1;
-        tapa::vec_t<float, 8> op2;
-        for(int k = 0; k < 8; k++){
-            op1[k] = rms_weight_hw[j][k];
-        }
-        for(int k = 0; k < 8; k++){
-            op2[k] = rms_weight_hw[j][k+8];
-        }
-        rms_weight_hw_arr[0].push_back(op1);
-        rms_weight_hw_arr[1].push_back(op2);
-    }
-
     // Hardware invocation
     tapa::invoke(
         qwen_block, FLAGS_bitstream,
         L_hw,
-        tapa::read_write_mmaps<tapa::vec_t<float, 8>, 2>(k_cache_hw_arr),
-        tapa::read_write_mmaps<tapa::vec_t<float, 8>, 2>(v_cache_hw_arr),
-        tapa::read_only_mmaps<tapa::vec_t<float, 8>, 4>(input_hw_arr),
-        tapa::read_only_mmaps<tapa::vec_t<float, 8>, 4>(centroid_hw_arr),
-        tapa::read_only_mmaps<tapa::vec_t<ap_uint<8>, 32>, 32>(lut_weight_idx_hw_arr),
+        tapa::read_write_mmap<tapa::vec_t<float, 16>>(k_cache_hw),
+        tapa::read_write_mmap<tapa::vec_t<float, 16>>(v_cache_hw),
+        tapa::read_only_mmaps<tapa::vec_t<float, 16>, 2>(input_hw),
+        tapa::read_only_mmaps<tapa::vec_t<float, 16>, 2>(centroid_hw),
+        tapa::read_only_mmaps<tapa::vec_t<ap_uint<8>, 64>, 16>(lut_weight_idx_hw),
         tapa::read_only_mmap<ap_uint<64>>(scale_zero_hw),
-        tapa::read_only_mmaps<tapa::vec_t<float, 8>, 2>(sin_hw_arr),
-        tapa::read_only_mmaps<tapa::vec_t<float, 8>, 2>(cos_hw_arr),
-        tapa::read_only_mmaps<tapa::vec_t<float, 8>, 2>(rms_weight_hw_arr),
-        tapa::write_only_mmaps<tapa::vec_t<float, 8>, 4>(output_hw)
+        tapa::read_only_mmap<tapa::vec_t<float, 16>>(sin_hw),
+        tapa::read_only_mmap<tapa::vec_t<float, 16>>(cos_hw),
+        tapa::read_only_mmap<tapa::vec_t<float, 16>>(rms_weight_hw),
+        tapa::write_only_mmaps<tapa::vec_t<float, 16>, 2>(output_hw)
     );
     
     std::cout << "Hardware execution completed!" << std::endl;
@@ -1671,7 +1577,7 @@ int main(int argc, char* argv[]) {
         for (int j = 0; j < HIDDEN_DIM; j++) {
             int vec_idx = (i * HIDDEN_DIM + j) / 32;
             int elem_idx = (i * HIDDEN_DIM + j) % 32;
-            hardware_output[i][j] = output_hw[elem_idx/8][vec_idx][elem_idx%8];
+            hardware_output[i][j] = output_hw[elem_idx/16][vec_idx][elem_idx%16];
         }
     }
     

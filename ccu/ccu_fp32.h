@@ -554,8 +554,8 @@ void input_reader(
 
 void input_reader_wide(
     const ap_uint<10> L_inst,
-    tapa::async_mmap<tapa::vec_t<float, 8>>& inp,
-    tapa::ostream<tapa::vec_t<float, 8>>& input_fifo
+    tapa::async_mmap<tapa::vec_t<float, 16>>& inp,
+    tapa::ostream<tapa::vec_t<float, 16>>& input_fifo
 ) {
     const int L_prefill = ap_uint<9>(L_inst(8, 0)).to_int();
     const int L = (L_inst[9] == 1) ? 1 : L_prefill;
@@ -567,7 +567,7 @@ void input_reader_wide(
             ++i_req;
 		}
 		if(!inp.read_data.empty()){
-            tapa::vec_t<float, 8> tmp;
+            tapa::vec_t<float, 16> tmp;
             inp.read_data.try_read(tmp);
             input_fifo.write(tmp);
             ++i_resp;
@@ -596,8 +596,8 @@ void centroid_reader(
 }
 
 void centroid_reader_split(
-    tapa::async_mmap<tapa::vec_t<float, 8>>& centroid,
-    tapa::ostreams<tapa::vec_t<float, 2>, 4>& centroid_fifo
+    tapa::async_mmap<tapa::vec_t<float, 16>>& centroid,
+    tapa::ostreams<tapa::vec_t<float, 2>, 8>& centroid_fifo
 ) {
     for(int i_req = 0, i_resp = 0; i_resp < (4 * TOTAL_CENTROID_SIZE);){
         #pragma HLS pipeline II=1
@@ -606,9 +606,9 @@ void centroid_reader_split(
             ++i_req;
         }
         if(!centroid.read_data.empty()){
-            tapa::vec_t<float, 8> tmp;
+            tapa::vec_t<float, 16> tmp;
             centroid.read_data.try_read(tmp);
-            for(int j = 0; j < 4; j++){
+            for(int j = 0; j < 8; j++){
                 #pragma HLS unroll
                 tapa::vec_t<float, 2> tmp_sub;
                 for(int k = 0; k < 2; k++){

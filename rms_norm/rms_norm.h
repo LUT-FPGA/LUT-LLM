@@ -36,8 +36,8 @@ void rms_input_reader(
 }
 
 void rms_weight_reader(
-    tapa::async_mmap<tapa::vec_t<float, 8>>& weight_buffer,
-    tapa::ostream<tapa::vec_t<float, 8>>& weight_fifo
+    tapa::async_mmap<tapa::vec_t<float, 16>>& weight_buffer,
+    tapa::ostream<tapa::vec_t<float, 16>>& weight_fifo
 ) {
     for(int i_req = 0, i_resp = 0; i_resp < (HIDDEN_DIM >> 4);){
         #pragma HLS pipeline II=1
@@ -46,7 +46,7 @@ void rms_weight_reader(
             ++i_req;
         }
         if(!weight_buffer.read_data.empty()){
-            tapa::vec_t<float, 8> tmp;
+            tapa::vec_t<float, 16> tmp;
             weight_buffer.read_data.try_read(tmp);
             weight_fifo.write(tmp);
             ++i_resp;
@@ -140,9 +140,9 @@ void rms_norm_cache(
     tapa::ostreams<ap_uint<10>, 2>& L_out_fifo,
     tapa::ostream<ap_uint<10>>& L_out_ccu_fifo, 
     tapa::istream<tapa::vec_t<float, 32>>& input_fifo,
-    tapa::istreams<tapa::vec_t<float, 8>, 2>& weight_fifo,
+    tapa::istream<tapa::vec_t<float, 16>>& weight_fifo,
     tapa::ostreams<tapa::vec_t<float, 16>, 2>& linear_fifo,
-    tapa::ostreams<tapa::vec_t<float, 8>, 4>& out_fifo
+    tapa::ostreams<tapa::vec_t<float, 16>, 2>& out_fifo
 ) {
 
     //shared rms weight
@@ -159,12 +159,10 @@ void rms_norm_cache(
 
     for(int i = 0; i < (HIDDEN_DIM >> 4); i++){
         #pragma HLS pipeline II=1
-        for(int c = 0; c < 2; c++){
-            auto weight_vec = weight_fifo[c].read();
-            for(int j = 0; j < 8; j++){
-                #pragma HLS unroll
-                weight[i * 16 + c * 8 + j] = weight_vec[j];
-            }
+        auto weight_vec = weight_fifo.read();
+        for(int j = 0; j < 16; j++){
+            #pragma HLS unroll
+            weight[i * 16 + j] = weight_vec[j];
         }
     }
 
@@ -216,13 +214,13 @@ void rms_norm_cache(
 
             for(int j = 0; j < (HIDDEN_DIM >> 5); j++){
                 #pragma HLS pipeline II=1
-                for(int c = 0; c < 4; c++){
+                for(int c = 0; c < 2; c++){
                     #pragma HLS unroll
-                    tapa::vec_t<float, 8> tmp;
-                    for(int k = 0; k < 8; k++){
+                    tapa::vec_t<float, 16> tmp;
+                    for(int k = 0; k < 16; k++){
                         #pragma HLS unroll
-                        input_buf[i][j*32+c*8+k] *= (variance * weight[j*32+c*8+k]);
-                        tmp[k] = input_buf[i][j*32+c*8+k];
+                        input_buf[i][j*32+c*16+k] *= (variance * weight[j*32+c*16+k]);
+                        tmp[k] = input_buf[i][j*32+c*16+k];
                     }
                     if(r == 2) out_fifo[c].write(tmp); 
                 } 

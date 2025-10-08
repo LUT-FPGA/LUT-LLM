@@ -14,6 +14,7 @@ constexpr int MAX_KV_LEN = 256;
 constexpr int MAX_SEQ_LEN_MUL_2 = MAX_SEQ_LEN * 2;
 constexpr int MAX_OUT_SIZE = 6144 * 2;
 constexpr int MAX_OUT_SIZE_DIV_2 = MAX_OUT_SIZE >> 1;
+constexpr int MAX_OUT_SIZE_DIV_4 = MAX_OUT_SIZE >> 2;
 constexpr int MAX_OUT_SIZE_DIV_256 = MAX_OUT_SIZE / 256;
 constexpr int MAX_OUT_SIZE_DIV_512 = MAX_OUT_SIZE / 512;
 constexpr int n_cent = 64;
@@ -26,6 +27,7 @@ constexpr int V_DIM_DIV_2 = V_DIM >> 1;
 constexpr int HEAD_DIM = 128;
 constexpr int KV_CACHE_DIM = HEAD_DIM * NUM_GROUPS;
 constexpr int HEAD_DIM_DIV_2 = HEAD_DIM >> 1;
+constexpr int HEAD_DIM_DIV_4 = HEAD_DIM >> 2;
 constexpr int HIDDEN_DIM = 2048;
 constexpr int HIDDEN_DIM_DIV_2 = HIDDEN_DIM >> 1;
 constexpr int HIDDEN_DIM_DIV_4 = HIDDEN_DIM >> 2;
@@ -45,11 +47,11 @@ constexpr int INTERM_DIM_DIV_32 = INTERM_DIM / 32;
 constexpr int NUM_ROPE_HEADS = NUM_HEADS + NUM_GROUPS;
 
 constexpr int FFN_LUT_SIZE = HIDDEN_DIM_DIV_2 * INTERM_DIM_MUL_2 + INTERM_DIM_DIV_2 * HIDDEN_DIM;
-constexpr int FFN_LUT_WEIGHT_SIZE = (FFN_LUT_SIZE >> 9) + (FFN_LUT_SIZE >> 11);
+constexpr int FFN_LUT_WEIGHT_SIZE = (FFN_LUT_SIZE >> 10) + (FFN_LUT_SIZE >> 11);
 constexpr int FFN_CENTROID_SIZE = HIDDEN_DIM_DIV_2 + INTERM_DIM_DIV_2;
 
 constexpr int ATTN_LUT_SIZE = HIDDEN_DIM_DIV_2 * QKV_DIM + HIDDEN_DIM_DIV_2 * HIDDEN_DIM;
-constexpr int ATTN_LUT_WEIGHT_SIZE = (ATTN_LUT_SIZE >> 9) + (ATTN_LUT_SIZE >> 11);
+constexpr int ATTN_LUT_WEIGHT_SIZE = (ATTN_LUT_SIZE >> 10) + (ATTN_LUT_SIZE >> 11);
 constexpr int ATTN_CENTROID_SIZE = HIDDEN_DIM;
 
 constexpr int TOTAL_LUT_WEIGHT_SIZE = FFN_LUT_WEIGHT_SIZE + ATTN_LUT_WEIGHT_SIZE;

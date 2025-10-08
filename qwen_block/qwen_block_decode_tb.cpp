@@ -1579,13 +1579,123 @@ int main(int argc, char* argv[]) {
     std::vector<std::vector<tapa::vec_t<float, 16>>> output_hw(2, std::vector<tapa::vec_t<float, 16>>(HIDDEN_DIM / 32));
     std::vector<int> cycle_count_hw(1);
     
-    // Initialize output buffer
-    // for (int i = 0; i < output_hw[0].size(); i++) {
-    //     for (int j = 0; j < 32; j++) {
-    //         output_hw[0][i][j] = 0.0f;
-    //         output_hw[1][i][j] = 0.0f;
+        // split 512 -> 2x256
+    // std::vector<std::vector<tapa::vec_t<float, 8>>> k_cache_hw_arr(2);
+    // std::vector<std::vector<tapa::vec_t<float, 8>>> v_cache_hw_arr(2);
+
+    // for (int i = 0; i < k_cache_hw.size(); i++) {
+    //     tapa::vec_t<float, 8> op1;
+    //     tapa::vec_t<float, 8> op2;
+    //     for(int j = 0; j < 8; j++){
+    //         op1[j] = k_cache_hw[i][j];
+    //         op2[j] = k_cache_hw[i][j+8];
+    //     }
+    //     k_cache_hw_arr[0].push_back(op1);
+    //     k_cache_hw_arr[1].push_back(op2);
+    // }
+
+    // for (int i = 0; i < v_cache_hw.size(); i++) {
+    //     tapa::vec_t<float, 8> op1;
+    //     tapa::vec_t<float, 8> op2;
+    //     for(int j = 0; j < 8; j++){
+    //         op1[j] = v_cache_hw[i][j];
+    //         op2[j] = v_cache_hw[i][j+8];
+    //     }
+    //     v_cache_hw_arr[0].push_back(op1);
+    //     v_cache_hw_arr[1].push_back(op2);
+    // }
+
+    // std::vector<std::vector<tapa::vec_t<float, 8>>> input_hw_arr(4);
+    // for(int i = 0; i < 2; i++){
+    //     for(int j = 0; j < input_hw[0].size(); j++){
+    //         tapa::vec_t<float, 8> op1;
+    //         tapa::vec_t<float, 8> op2;
+    //         for(int k = 0; k < 8; k++){
+    //             op1[k] = input_hw[i][j][k];
+    //         }
+    //         for(int k = 0; k < 8; k++){
+    //             op2[k] = input_hw[i][j][k+8];
+    //         }
+    //         input_hw_arr[i*2].push_back(op1);
+    //         input_hw_arr[i*2+1].push_back(op2);
     //     }
     // }
+
+    // std::vector<std::vector<tapa::vec_t<float, 8>>> centroid_hw_arr(4);
+    // for(int i = 0; i < 2; i++){
+    //     for(int j = 0; j < centroid_hw[0].size(); j++){
+    //         tapa::vec_t<float, 8> op1;
+    //         tapa::vec_t<float, 8> op2;
+    //         for(int k = 0; k < 8; k++){
+    //             op1[k] = centroid_hw[i][j][k];
+    //         }
+    //         for(int k = 0; k < 8; k++){
+    //             op2[k] = centroid_hw[i][j][k+8];
+    //         }
+    //         centroid_hw_arr[i*2].push_back(op1);
+    //         centroid_hw_arr[i*2+1].push_back(op2);
+    //     }
+    // }
+
+    // std::vector<std::vector<tapa::vec_t<ap_uint<8>, 32>>> lut_weight_idx_hw_arr(32);
+    // for(int i = 0; i < 16; i++){
+    //     for(int j = 0; j < lut_weight_idx_hw[0].size(); j++){
+    //         tapa::vec_t<ap_uint<8>, 32> op1;
+    //         tapa::vec_t<ap_uint<8>, 32> op2;
+    //         for(int k = 0; k < 32; k++){
+    //             op1[k] = lut_weight_idx_hw[i][j][k];
+    //         }
+    //         for(int k = 0; k < 32; k++){
+    //             op2[k] = lut_weight_idx_hw[i][j][k+32];
+    //         }
+    //         lut_weight_idx_hw_arr[i*2].push_back(op1);
+    //         lut_weight_idx_hw_arr[i*2+1].push_back(op2);
+    //     }
+    // }
+
+    // std::vector<std::vector<tapa::vec_t<float, 8>>> sin_hw_arr(2);
+    // for(int j = 0; j < sin_hw.size(); j++){
+    //     tapa::vec_t<float, 8> op1;
+    //     tapa::vec_t<float, 8> op2;
+    //     for(int k = 0; k < 8; k++){
+    //         op1[k] = sin_hw[j][k];
+    //     }
+    //     for(int k = 0; k < 8; k++){
+    //         op2[k] = sin_hw[j][k+8];
+    //     }
+    //     sin_hw_arr[0].push_back(op1);
+    //     sin_hw_arr[1].push_back(op2);
+    // }
+
+    // std::vector<std::vector<tapa::vec_t<float, 8>>> cos_hw_arr(2);
+    // for(int j = 0; j < cos_hw.size(); j++){
+    //     tapa::vec_t<float, 8> op1;
+    //     tapa::vec_t<float, 8> op2;
+    //     for(int k = 0; k < 8; k++){
+    //         op1[k] = cos_hw[j][k];
+    //     }
+    //     for(int k = 0; k < 8; k++){
+    //         op2[k] = cos_hw[j][k+8];
+    //     }
+    //     cos_hw_arr[0].push_back(op1);
+    //     cos_hw_arr[1].push_back(op2);
+    // }
+
+    // std::vector<std::vector<tapa::vec_t<float, 8>>> rms_weight_hw_arr(2);
+    // for(int j = 0; j < rms_weight_hw.size(); j++){
+    //     tapa::vec_t<float, 8> op1;
+    //     tapa::vec_t<float, 8> op2;
+    //     for(int k = 0; k < 8; k++){
+    //         op1[k] = rms_weight_hw[j][k];
+    //     }
+    //     for(int k = 0; k < 8; k++){
+    //         op2[k] = rms_weight_hw[j][k+8];
+    //     }
+    //     rms_weight_hw_arr[0].push_back(op1);
+    //     rms_weight_hw_arr[1].push_back(op2);
+    // }
+
+
     cycle_count_hw[0] = 0;
     
     std::cout << "Invoking hardware..." << std::endl;
