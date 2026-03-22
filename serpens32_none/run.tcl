@@ -42,7 +42,6 @@ make_wrapper -files [get_files top_arm.bd] -top -import
 set_property top top_arm_wrapper [current_fileset]
 generate_target all [get_files top_arm.bd]
 
-set_property -name {STEPS.SYNTH_DESIGN.ARGS.MORE OPTIONS}     -value {-mode out_of_context}     -objects [get_runs synth_1]
 launch_runs synth_1 -jobs [getEnvInt VIVADO_SYNTH_JOBS 4]
 wait_on_run synth_1
 
