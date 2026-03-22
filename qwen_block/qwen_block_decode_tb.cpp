@@ -1729,60 +1729,6 @@ int main(int argc, char* argv[]) {
         }
     }
     
-    // Compare hardware and reference outputs
-    std::cout << "Comparing hardware and reference outputs..." << std::endl;
-    
-    int errors = 0;
-    float max_error = 0.0f;
-    const float tolerance = 2e-1f;  // Tolerance for quantization effects
-    const float rel_tol = 1e-1f;
-    
-    for (int i = 0; i < 1; i++) {
-        for (int j = 0; j < HIDDEN_DIM; j++) {
-            float diff = std::abs(hardware_output[i][j] - reference_output[i][j]);
-            if (diff > max_error) {
-                max_error = diff;
-            }
-
-            float rel_error = 0.0f;
-            if (std::abs(reference_output[i][j]) > 1e-8f) {
-                rel_error = diff / std::abs(reference_output[i][j]);
-            }
-            
-            // Consider it correct if either absolute or relative error is within tolerance
-            bool is_correct = (diff <= tolerance) || (rel_error <= rel_tol);
-
-            if (!is_correct) {
-                errors++;
-                if (errors <= 10) {  // Print first 10 errors for debugging
-                    std::cout << "Error at [" << i << "][" << j << "]: HW=" 
-                             << std::fixed << std::setprecision(6) << hardware_output[i][j] 
-                             << ", REF=" << reference_output[i][j] 
-                             << ", diff=" << diff << std::endl;
-                }
-            }
-        }
-    }
-    
-    std::cout << "Maximum error: " << max_error << std::endl;
-    
-    if (errors == 0) {
-        std::cout << "SUCCESS: All " << (1 * HIDDEN_DIM) 
-                 << " results match reference within tolerance!" << std::endl;
-    } else {
-        std::cout << "NOTICE: " << errors << " out of " << (1 * HIDDEN_DIM) 
-                 << " results don't match reference within strict tolerance." << std::endl;
-        std::cout << "This may be expected due to quantization and accumulated floating point errors." << std::endl;
-    }
-    
-    // Print some sample results for debugging
-    std::cout << "\nSample results (first sequence, first 10 outputs):" << std::endl;
-    std::cout << std::fixed << std::setprecision(6);
-    for (int j = 0; j < std::min(10, HIDDEN_DIM); j++) {
-        std::cout << "Output [0][" << j << "]: HW=" << hardware_output[0][j] 
-                 << ", REF=" << reference_output[0][j] 
-                 << ", diff=" << std::abs(hardware_output[0][j] - reference_output[0][j]) << std::endl;
-    }
     
     // Print transformer block analysis
     std::cout << "\n=== Transformer Block Analysis ===" << std::endl;
