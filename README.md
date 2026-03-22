@@ -1,5 +1,7 @@
 # LUT-LLM: Efficient Language Model Inference with Memory-based Computations on FPGAs
 
+[![DOI](https://zenodo.org/badge/1168934775.svg)](https://doi.org/10.5281/zenodo.18809342)
+
 <p align="center">
   <img src="figs/lutlinear.png" width="1000"/>
 </p>
