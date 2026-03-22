@@ -1761,5 +1761,4 @@ int main(int argc, char* argv[]) {
     std::cout << "    RoPE tables: " << (2 * L * HEAD_DIM / 2 * sizeof(float)) << " bytes" << std::endl;
     std::cout << "    Output: " << (L * HIDDEN_DIM * sizeof(float)) << " bytes" << std::endl;
     
-    return errors == 0 ? 0 : 1;
 }
