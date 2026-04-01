@@ -36,6 +36,7 @@ cd qwen_block
 make csim
 make csim_decode
 ```
+To change the input length, simplying change the `const int L` to the value (either 32 or 128) in the `*_tb.cpp` files.
 
 2. Run C-simulation
 ```bash
@@ -61,7 +62,7 @@ make hls
 6. Run the e2e latency calculator to validate. Use the cycle count from the previous step as the argument for the script.
 ```bash
 make e2e_latency
-./e2e_latency <prefill_cycle> <decode_cycle>
+./e2e_latency <prefill_cycle> <decode_cycle> <input_len> <output_len>
 ```
 
 ## Project Structure
