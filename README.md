@@ -22,13 +22,19 @@
 
 ## Artifact Evaluation
 
-Make sure your system has Vitis/Vivado 2024.2 and Gurobi installed. You may need to run `settings.sh` for Vitis and Vivado to set up the path.
+Make sure your system has Vitis/Vivado 2024.2 and Gurobi installed. You may need to run `settings.sh` for Vitis and Vivado to set up the path. Please make sure you have the synthesis and implementation license for part number `xcv80-lsva4737-2MHP-e-S`.
 
 0. Install [TAPA](https://drive.google.com/file/d/1-GJDFHiaIDOldNGgtdgDSRxlDvRoBzSt/view?usp=drive_link): Download and untar this folder into your home and add the `PATH` variable in your `~/.bashrc`
 ```bash
 tar -xf tapa.tar
-export PATH="$PATH:~/.rapidstream-tapa/usr/bin"
+export PATH="$PATH:$HOME/.rapidstream-tapa/usr/bin"
 ```
+If you got `tapa.tar.gz`:
+```bash
+tar -xzvf tapa.tar.gz
+export PATH="$PATH:$HOME/.rapidstream-tapa/usr/bin"
+```
+You can replace `$HOME` with the absolute path of `.rapidstream-tapa`.
 
 1. Generate host executable for prefill and decode.
 ```bash
@@ -36,6 +42,10 @@ cd qwen_block
 make csim
 make csim_decode
 ```
+
+> [!NOTE]
+> If you encounter the error `tapa: no such file or directory`, you can add the `export PATH` command in the makefile.
+
 To change the input length, simplying change the `const int L` to the value (either 32 or 128) in the `*_tb.cpp` files.
 
 2. Run C-simulation
@@ -54,10 +64,12 @@ make hls
 ./qwen_block --bitstream=qwen_block.xo -xosim_save_waveform -xosim_work_dir=waveform/
 ./qwen_block_decode --bitstream=qwen_block.xo -xosim_save_waveform -xosim_work_dir=waveform/
 ```
+This can take several hours, so use `tmux` to run it at background.
+
 > [!NOTE]
 > If you are using the VASTLab cluster as the guest account, we can provide the wdb directly to save the time of running RTL simulation.
 
-5. Open the waveform in `waveform/output/run/vivado/tapa-fast-cosim.sim/` with Vivado and get the cycle count for each.
+5. Open the waveform in `waveform/output/run/vivado/tapa-fast-cosim.sim/` with Vivado and get the cycle count for each. You should do it by `Flow > Open Static Simulation`, then add `ap_start` and `ap_done` signals in `dut` module to the wave window. Calculate the latency between these two signals and divide it by 4.
 
 6. Run the e2e latency calculator to validate. Use the cycle count from the previous step as the argument for the script.
 ```bash

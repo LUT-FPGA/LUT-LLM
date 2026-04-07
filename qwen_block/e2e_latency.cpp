@@ -8,12 +8,12 @@
 // Reference latencies (seconds) keyed by {input_len, output_len}.
 // Fill in the values below.
 static const std::map<std::pair<int,int>, double> kReferenceLatency = {
-    {{32,  16},  0.1153},
-    {{32,  64},  0.3650},
-    {{32,  256}, 1.3243},
-    {{128, 16},  0.2519},
-    {{128, 64},  0.4916},
-    {{128, 256}, 1.4506},
+    {{32,  16},  0.1059},
+    {{32,  64},  0.3511},
+    {{32,  256}, 1.3318},
+    {{128, 16},  0.2847},
+    {{128, 64},  0.5299},
+    {{128, 256}, 1.5107},
 };
 
 int main(int argc, char* argv[]) {
