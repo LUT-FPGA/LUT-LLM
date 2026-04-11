@@ -525,7 +525,7 @@ void memory_matcher_w_vq_half_final(
     }
 }
 
-void memory_matcher_w_vq_half_final_int4(
+void memory_matcher_w_vq_half_final_v2(
     tapa::istream<ap_uint<10>>& L_in_fifo,
     tapa::istream<idx_t>& idx_fifo,
     tapa::istream<tapa::vec_t<ap_uint<8>, 64>>& lut_weight_idx_fifo,
@@ -928,7 +928,7 @@ void memory_matcher_w_vq_half_dsp_final(
     }
 }
 
-void memory_matcher_w_vq_half_dsp_final_int4(
+void memory_matcher_w_vq_half_dsp_final_v2(
     tapa::istream<ap_uint<10>>& L_in_fifo,
     tapa::istream<idx_t>& idx_fifo,
     tapa::istream<tapa::vec_t<ap_uint<8>, 64>>& lut_weight_idx_fifo,
@@ -1304,7 +1304,7 @@ void memory_matcher_w_vq_head_half_final(
     }
 }
 
-void memory_matcher_w_vq_head_half_final_int4(
+void memory_matcher_w_vq_head_half_final_v2(
     tapa::istream<ap_uint<10>>& L_in_fifo,
     tapa::istream<idx_t>& idx_fifo,
     tapa::istream<tapa::vec_t<ap_uint<8>, 64>>& lut_weight_idx_fifo,
