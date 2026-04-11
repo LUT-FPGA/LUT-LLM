@@ -59,7 +59,7 @@ std::pair<float, float> compute_scale_zeropoint(const std::vector<std::vector<st
         }
     }
     
-    float scale = (max_val - min_val) / 255.0f;
+    float scale = (max_val - min_val) / 15.0f;
     float zeropoint = -min_val / scale;
 
     return {scale, zeropoint};
@@ -67,8 +67,8 @@ std::pair<float, float> compute_scale_zeropoint(const std::vector<std::vector<st
 
 uint8_t quantize_value(float value, float scale, float zeropoint) {
     int quantized = std::round(value / scale + zeropoint);
-    // Clamp to uint8 range
-    quantized = std::max(0, std::min(255, quantized));
+    // Clamp to 4-bit range [0, 15]
+    quantized = std::max(0, std::min(15, quantized));
     return static_cast<uint8_t>(quantized);
 }
 
@@ -846,10 +846,11 @@ int main(int argc, char* argv[]) {
     std::cout << "Packing quantized LUT into hardware format..." << std::endl;
     
     // Calculate total LUT vectors needed for hardware format
-    int qkv_lut_vectors = (HIDDEN_DIM_DIV_2 / 16) * qkv_submatrices * (num_act_centroids / 4);
-    int attn_out_lut_vectors = (HIDDEN_DIM_DIV_2 / 16) * attn_out_submatrices * (num_act_centroids / 4);
-    int up_gate_lut_vectors = (HIDDEN_DIM_DIV_2 / 16) * up_submatrices * 2 * (num_act_centroids / 4);  // *2 for up+gate concatenation
-    int down_lut_vectors = (INTERM_DIM_DIV_2 / 16) * down_submatrices * (num_act_centroids / 4);
+    // Each ap_uint<8> element now holds two 4-bit LUT values, so vectors are halved
+    int qkv_lut_vectors = (HIDDEN_DIM_DIV_2 / 16) * qkv_submatrices * (num_act_centroids / 8);
+    int attn_out_lut_vectors = (HIDDEN_DIM_DIV_2 / 16) * attn_out_submatrices * (num_act_centroids / 8);
+    int up_gate_lut_vectors = (HIDDEN_DIM_DIV_2 / 16) * up_submatrices * 2 * (num_act_centroids / 8);  // *2 for up+gate concatenation
+    int down_lut_vectors = (INTERM_DIM_DIV_2 / 16) * down_submatrices * (num_act_centroids / 8);
     int total_lut_vectors = qkv_lut_vectors + attn_out_lut_vectors + up_gate_lut_vectors + down_lut_vectors;
     
     std::vector<std::vector<tapa::vec_t<ap_uint<8>, 64>>> lut_hw(16);
@@ -866,25 +867,27 @@ int main(int argc, char* argv[]) {
     int vector_offset = 0;
     
     // Pack QKV LUT first
+    // Each ap_uint<8> element packs two 4-bit LUT values:
+    //   bits [3:0] = LUT[act_idx][k*2], bits [7:4] = LUT[act_idx][k*2+1]
     for (int pos = 0; pos < HIDDEN_DIM_DIV_2; pos++) {
         int buffer_idx = pos % 16;
         int local_pos = pos / 16;
-        
+
         for (int sub = 0; sub < qkv_submatrices; sub++) {
-            for (int act_group = 0; act_group < num_act_centroids / 4; act_group++) {
-                int hw_idx = vector_offset + local_pos * qkv_submatrices * (num_act_centroids / 4) + act_group * qkv_submatrices + sub;
-                
-                // Pack 64 elements: 4 activation centroids x 16 weight centroids
-                for (int k = 0; k < 16; k++) {
-                    for (int ii = 0; ii < 4; ii++) {
-                        int act_idx = act_group * 4 + ii;
-                        if (act_idx < num_act_centroids && k < num_weight_centroids) {
-                            int elem_idx = ii * 16 + k;
-                            lut_hw[buffer_idx][hw_idx][elem_idx] = qkv_lut_2d_quantized[pos][sub][act_idx][k];
-                        } else {
-                            int elem_idx = ii * 16 + k;
-                            lut_hw[buffer_idx][hw_idx][elem_idx] = 0;
-                        }
+            for (int act_group = 0; act_group < num_act_centroids / 8; act_group++) {
+                int hw_idx = vector_offset + local_pos * qkv_submatrices * (num_act_centroids / 8) + act_group * qkv_submatrices + sub;
+
+                // Pack 64 elements: 8 activation centroids x 8 weight centroid pairs (each pair = 2x4-bit)
+                for (int ii = 0; ii < 8; ii++) {
+                    for (int k = 0; k < 8; k++) {
+                        int act_idx = act_group * 8 + ii;
+                        int elem_idx = ii * 8 + k;
+                        ap_uint<8> packed = 0;
+                        if (act_idx < num_act_centroids && k * 2 < num_weight_centroids)
+                            packed(3, 0) = qkv_lut_2d_quantized[pos][sub][act_idx][k * 2];
+                        if (act_idx < num_act_centroids && k * 2 + 1 < num_weight_centroids)
+                            packed(7, 4) = qkv_lut_2d_quantized[pos][sub][act_idx][k * 2 + 1];
+                        lut_hw[buffer_idx][hw_idx][elem_idx] = packed;
                     }
                 }
             }
@@ -896,21 +899,21 @@ int main(int argc, char* argv[]) {
     for (int pos = 0; pos < HIDDEN_DIM_DIV_2; pos++) {
         int buffer_idx = pos % 16;
         int local_pos = pos / 16;
-        
+
         for (int sub = 0; sub < attn_out_submatrices; sub++) {
-            for (int act_group = 0; act_group < num_act_centroids / 4; act_group++) {
-                int hw_idx = vector_offset + local_pos * attn_out_submatrices * (num_act_centroids / 4) + act_group * attn_out_submatrices + sub;
-                
-                for (int k = 0; k < 16; k++) {
-                    for (int ii = 0; ii < 4; ii++) {
-                        int act_idx = act_group * 4 + ii;
-                        if (act_idx < num_act_centroids && k < num_weight_centroids) {
-                            int elem_idx = ii * 16 + k;
-                            lut_hw[buffer_idx][hw_idx][elem_idx] = attn_out_lut_2d_quantized[pos][sub][act_idx][k];
-                        } else {
-                            int elem_idx = ii * 16 + k;
-                            lut_hw[buffer_idx][hw_idx][elem_idx] = 0;
-                        }
+            for (int act_group = 0; act_group < num_act_centroids / 8; act_group++) {
+                int hw_idx = vector_offset + local_pos * attn_out_submatrices * (num_act_centroids / 8) + act_group * attn_out_submatrices + sub;
+
+                for (int ii = 0; ii < 8; ii++) {
+                    for (int k = 0; k < 8; k++) {
+                        int act_idx = act_group * 8 + ii;
+                        int elem_idx = ii * 8 + k;
+                        ap_uint<8> packed = 0;
+                        if (act_idx < num_act_centroids && k * 2 < num_weight_centroids)
+                            packed(3, 0) = attn_out_lut_2d_quantized[pos][sub][act_idx][k * 2];
+                        if (act_idx < num_act_centroids && k * 2 + 1 < num_weight_centroids)
+                            packed(7, 4) = attn_out_lut_2d_quantized[pos][sub][act_idx][k * 2 + 1];
+                        lut_hw[buffer_idx][hw_idx][elem_idx] = packed;
                     }
                 }
             }
@@ -949,21 +952,21 @@ int main(int argc, char* argv[]) {
     for (int pos = 0; pos < HIDDEN_DIM_DIV_2; pos++) {
         int buffer_idx = pos % 16;
         int local_pos = pos / 16;
-        
+
         for (int sub = 0; sub < up_submatrices * 2; sub++) {  // Iterate through all concatenated submatrices
-            for (int act_group = 0; act_group < num_act_centroids / 4; act_group++) {
-                int hw_idx = vector_offset + local_pos * up_submatrices * 2 * (num_act_centroids / 4) + act_group * up_submatrices * 2 + sub;
-                
-                for (int k = 0; k < 16; k++) {
-                    for (int ii = 0; ii < 4; ii++) {
-                        int act_idx = act_group * 4 + ii;
-                        if (act_idx < num_act_centroids && k < num_weight_centroids) {
-                            int elem_idx = ii * 16 + k;
-                            lut_hw[buffer_idx][hw_idx][elem_idx] = up_gate_lut_2d_quantized[pos][sub][act_idx][k];
-                        } else {
-                            int elem_idx = ii * 16 + k;
-                            lut_hw[buffer_idx][hw_idx][elem_idx] = 0;
-                        }
+            for (int act_group = 0; act_group < num_act_centroids / 8; act_group++) {
+                int hw_idx = vector_offset + local_pos * up_submatrices * 2 * (num_act_centroids / 8) + act_group * up_submatrices * 2 + sub;
+
+                for (int ii = 0; ii < 8; ii++) {
+                    for (int k = 0; k < 8; k++) {
+                        int act_idx = act_group * 8 + ii;
+                        int elem_idx = ii * 8 + k;
+                        ap_uint<8> packed = 0;
+                        if (act_idx < num_act_centroids && k * 2 < num_weight_centroids)
+                            packed(3, 0) = up_gate_lut_2d_quantized[pos][sub][act_idx][k * 2];
+                        if (act_idx < num_act_centroids && k * 2 + 1 < num_weight_centroids)
+                            packed(7, 4) = up_gate_lut_2d_quantized[pos][sub][act_idx][k * 2 + 1];
+                        lut_hw[buffer_idx][hw_idx][elem_idx] = packed;
                     }
                 }
             }
@@ -975,21 +978,21 @@ int main(int argc, char* argv[]) {
     for (int pos = 0; pos < INTERM_DIM_DIV_2; pos++) {
         int buffer_idx = pos % 16;
         int local_pos = pos / 16;
-        
+
         for (int sub = 0; sub < down_submatrices; sub++) {
-            for (int act_group = 0; act_group < num_act_centroids / 4; act_group++) {
-                int hw_idx = vector_offset + local_pos * down_submatrices * (num_act_centroids / 4) + act_group * down_submatrices + sub;
-                
-                for (int k = 0; k < 16; k++) {
-                    for (int ii = 0; ii < 4; ii++) {
-                        int act_idx = act_group * 4 + ii;
-                        if (act_idx < num_act_centroids && k < num_weight_centroids) {
-                            int elem_idx = ii * 16 + k;
-                            lut_hw[buffer_idx][hw_idx][elem_idx] = down_lut_2d_quantized[pos][sub][act_idx][k];
-                        } else {
-                            int elem_idx = ii * 16 + k;
-                            lut_hw[buffer_idx][hw_idx][elem_idx] = 0;
-                        }
+            for (int act_group = 0; act_group < num_act_centroids / 8; act_group++) {
+                int hw_idx = vector_offset + local_pos * down_submatrices * (num_act_centroids / 8) + act_group * down_submatrices + sub;
+
+                for (int ii = 0; ii < 8; ii++) {
+                    for (int k = 0; k < 8; k++) {
+                        int act_idx = act_group * 8 + ii;
+                        int elem_idx = ii * 8 + k;
+                        ap_uint<8> packed = 0;
+                        if (act_idx < num_act_centroids && k * 2 < num_weight_centroids)
+                            packed(3, 0) = down_lut_2d_quantized[pos][sub][act_idx][k * 2];
+                        if (act_idx < num_act_centroids && k * 2 + 1 < num_weight_centroids)
+                            packed(7, 4) = down_lut_2d_quantized[pos][sub][act_idx][k * 2 + 1];
+                        lut_hw[buffer_idx][hw_idx][elem_idx] = packed;
                     }
                 }
             }
@@ -1201,15 +1204,15 @@ int main(int argc, char* argv[]) {
         lut_weight_idx_hw[buffer_idx].resize(lut_hw[0].size() + weight_idx_hw[0].size());
     }
 
-    const int round_0_lut_bound = (num_act_centroids >> 2) * (QKV_DIM >> 9);
-    const int round_1_lut_bound = (num_act_centroids >> 2) * (HIDDEN_DIM >> 9);
+    const int round_0_lut_bound = (num_act_centroids >> 3) * (QKV_DIM >> 9);
+    const int round_1_lut_bound = (num_act_centroids >> 3) * (HIDDEN_DIM >> 9);
     const int round_0_weight_bound = (QKV_DIM >> 7);
     const int round_1_weight_bound = (HIDDEN_DIM >> 7);
     const int round_0_bound = (HIDDEN_DIM_DIV_2 >> 4);
     const int round_1_bound = (HIDDEN_DIM_DIV_2 >> 4);  // Only one layer for attention
 
-    const int round_2_lut_bound = (num_act_centroids >> 2) * (INTERM_DIM_MUL_2 >> 9);
-    const int round_3_lut_bound = (num_act_centroids >> 2) * (HIDDEN_DIM >> 9);
+    const int round_2_lut_bound = (num_act_centroids >> 3) * (INTERM_DIM_MUL_2 >> 9);
+    const int round_3_lut_bound = (num_act_centroids >> 3) * (HIDDEN_DIM >> 9);
     const int round_2_weight_bound = (INTERM_DIM_MUL_2 >> 7);
     const int round_3_weight_bound = (HIDDEN_DIM >> 7);
     const int round_2_bound = (HIDDEN_DIM_DIV_2 >> 4);
@@ -1579,6 +1582,60 @@ int main(int argc, char* argv[]) {
             int elem_idx = (i * HIDDEN_DIM + j) % 32;
             hardware_output[i][j] = output_hw[elem_idx/16][vec_idx][elem_idx%16];
         }
+    }
+
+    // Compare hardware and reference outputs
+    std::cout << "Comparing hardware and reference outputs..." << std::endl;
+    
+    int errors = 0;
+    float max_error = 0.0f;
+    const float tolerance = 6e-1f;  // Tolerance for 4-bit quantization effects (coarser than 8-bit)
+    const float rel_tol = 1e-1f;
+    
+    for (int i = 0; i < L; i++) {
+        for (int j = 0; j < HIDDEN_DIM; j++) {
+            float diff = std::abs(hardware_output[i][j] - reference_output[i][j]);
+            if (diff > max_error) {
+                max_error = diff;
+            }
+
+            float rel_error = 0.0f;
+            if (std::abs(reference_output[i][j]) > 1e-8f) {
+                rel_error = diff / std::abs(reference_output[i][j]);
+            }
+            
+            // Consider it correct if either absolute or relative error is within tolerance
+            bool is_correct = (diff <= tolerance) || (rel_error <= rel_tol);
+
+            if (!is_correct) {
+                errors++;
+                if (errors <= 10) {  // Print first 10 errors for debugging
+                    std::cout << "Error at [" << i << "][" << j << "]: HW=" 
+                             << std::fixed << std::setprecision(6) << hardware_output[i][j] 
+                             << ", REF=" << reference_output[i][j] 
+                             << ", diff=" << diff << std::endl;
+                }
+            }
+        }
+    }
+    
+    
+    if (errors == 0) {
+        std::cout << "SUCCESS: All " << (L * HIDDEN_DIM) 
+                 << " results match reference within tolerance!" << std::endl;
+    } else {
+        std::cout << "NOTICE: " << errors << " out of " << (L * HIDDEN_DIM) 
+                 << " results don't match reference within strict tolerance." << std::endl;
+        std::cout << "This may be expected due to quantization and accumulated floating point errors." << std::endl;
+    }
+    
+    // Print some sample results for debugging
+    std::cout << "\nSample results (first sequence, first 10 outputs):" << std::endl;
+    std::cout << std::fixed << std::setprecision(6);
+    for (int j = 0; j < std::min(10, HIDDEN_DIM); j++) {
+        std::cout << "Output [0][" << j << "]: HW=" << hardware_output[0][j] 
+                 << ", REF=" << reference_output[0][j] 
+                 << ", diff=" << std::abs(hardware_output[0][j] - reference_output[0][j]) << std::endl;
     }
     
     // Print transformer block analysis

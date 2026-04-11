@@ -77,6 +77,21 @@ make e2e_latency
 ./e2e_latency <prefill_cycle> <decode_cycle> <input_len> <output_len>
 ```
 
+## Inference Latency (ms)
+
+| Platform | [32, 16] | [32, 64] | [32, 256] | [128, 16] | [128, 64] | [128, 256] |
+|---|---|---|---|---|---|---|
+| A100 80GB (BF16) | 241.4 | 935.0 | 3895.8 | 323.7 | 1080.2 | 4086.2 |
+| A100 80GB (INT8) | 96.0 | 404.6 | 1683.0 | 128.7 | 467.3 | 1765.1 |
+| A100 80GB (INT4) | 88.3 | 377.1 | 1460.5 | 118.1 | 435.4 | 1531.6 |
+| MI210 (BF16) | 268.0 | 1134.0 | 4336.2 | 356.7 | 1307.7 | 4546.0 |
+| MI210 (INT8) | 268.1 | 1136.4 | 4394.0 | 371.9 | 1323.5 | 4618.6 |
+| LUT-LLM | 105.9 | 351.1 | 1331.8 | 284.7 | 529.9 | 1510.7 |
+
+> Column headers are `[batch size, sequence length]`.
+
+> GPU latency are measured using `vllm bench latency`
+
 ## Project Structure
 
 Detail will come later.
