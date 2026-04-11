@@ -225,7 +225,7 @@ void memory_matcher_acc_overlay_half_int4(
     for (int round = 0; round < 4; round++) {
 
         for (int i = 0; i < L; i++) {
-            for (int j = 0; j < (INTERM_DIM >> 7); j++){
+            for (int j = 0; j < (INTERM_DIM >> 8); j++){
                 #pragma HLS pipeline II=1
                 for (int k = 0; k < 128; k++) {
                     #pragma HLS unroll
