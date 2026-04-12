@@ -22,7 +22,7 @@
 
 ## Artifact Evaluation
 
-Make sure your system has Vitis/Vivado 2024.2 and Gurobi installed. You may need to run `settings.sh` for Vitis and Vivado to set up the path. Please make sure you have the synthesis and implementation license for part number `xcv80-lsva4737-2MHP-e-S`.
+Make sure your system has Vitis/Vivado 2024.2 and Gurobi installed. You may need to run `settings.sh` for Vitis and Vivado to set up the path. Please make sure you have the synthesis and implementation license for part number `xcv80-lsva4737-2MHP-e-S` (AMD V80 FPGA).
 
 0. Install [TAPA](https://drive.google.com/file/d/1-GJDFHiaIDOldNGgtdgDSRxlDvRoBzSt/view?usp=drive_link): Download and untar this folder into your home and add the `PATH` variable in your `~/.bashrc`
 ```bash
@@ -94,4 +94,18 @@ make e2e_latency
 
 ## Project Structure
 
-Detail will come later.
+- `ccu`: the bandwidth-aware centroid search unit (BPCSU)
+- `ffn`: the feedforward layer
+- `gqa`: the grouped-query attention
+- `imm`: the 2D table lookup engine
+- `lut-dla`: the LUTLinear engine
+- `rope`, `rms_norm`, `silu`: non-linear operations (RoPE, RMSNorm, Sigmoid ReLU)
+- `qwen_block`: the Qwen 3 1.7B model
+  - `e2e_latency.cpp`: latency calculator
+  - `example.pwr`: power report
+  - `qwen_v80.pdi`: bitstream for V80
+  - `timing.rpt`: post-routing timing report
+  - `qwen_block_tb`, `qwen_block_decode_tb`: host for prefill and decode
+- `qwen_lut_model`: performance modeling scripts
+- `custom_design`: scripts to generate design connected with HBM
+- `rapidstream_script`: scripts to use RapidStream for floorplanning
